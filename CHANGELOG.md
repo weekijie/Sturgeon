@@ -73,6 +73,14 @@ All notable changes to this project will be documented in this file.
 - **No Provider needed** (unlike v2)
 - Skills available: `node scripts/get_component_docs.mjs Button Card`
 
+### Polished
+- **UI Design System**: Applied Glassmorphism and Pulse animations for premium feel
+  - `Header`: Sticky backdrop-blur-md on all pages
+  - `Cards`: Hover effects (border-teal, shadow, scale)
+  - `Button`: Pulse animation during loading state
+  - `DropZone`: Glow effect on valid file drag
+- **Configuration**: Consolidated `frontend/.gitignore` into root `.gitignore`
+
 ### Repository
 - GitHub repo created: https://github.com/weekijie/Sturgeon
 - Initial commit pushed (57 files)

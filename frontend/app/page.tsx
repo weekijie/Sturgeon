@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Card, Button, TextArea, Label, Spinner } from "@heroui/react";
+import { Card, Button, Spinner } from "@heroui/react";
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -59,15 +59,17 @@ export default function UploadPage() {
         </div>
 
         {/* Upload Card */}
-        <Card>
-          <Card.Header>
-            <Card.Title>Upload Lab Report</Card.Title>
-            <Card.Description>
+        <Card className="p-0">
+          {/* Card Header */}
+          <div className="p-6 pb-0">
+            <h2 className="text-xl font-semibold">Upload Lab Report</h2>
+            <p className="text-muted text-sm mt-1">
               Upload a lab report or imaging result to begin the diagnostic debate
-            </Card.Description>
-          </Card.Header>
+            </p>
+          </div>
 
-          <Card.Content className="space-y-6">
+          {/* Card Content */}
+          <div className="p-6 space-y-6">
             {/* Drop Zone */}
             <div
               onDragOver={handleDragOver}
@@ -111,37 +113,43 @@ export default function UploadPage() {
               )}
             </div>
 
-            {/* Patient History */}
+            {/* Patient History - using native textarea */}
             <div className="space-y-2">
-              <Label htmlFor="patient-history">Patient History (Optional)</Label>
-              <TextArea
+              <label htmlFor="patient-history" className="text-sm font-medium">
+                Patient History (Optional)
+              </label>
+              <textarea
                 id="patient-history"
                 placeholder="Enter relevant patient history, symptoms, medications, previous diagnoses..."
                 rows={4}
                 value={patientHistory}
                 onChange={(e) => setPatientHistory(e.target.value)}
-                variant="secondary"
-                className="w-full"
+                className="w-full rounded-lg bg-surface border border-border px-4 py-3 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent resize-none"
               />
             </div>
-          </Card.Content>
+          </div>
 
-          <Card.Footer className="flex justify-end">
+          {/* Card Footer */}
+          <div className="p-6 pt-0 flex justify-end">
             <Button
-              variant="primary"
+              variant="solid"
               onPress={handleAnalyze}
               isDisabled={!file && !patientHistory.trim()}
+              className={`
+                min-w-[200px] transition-all duration-300 font-semibold
+                ${isAnalyzing ? "animate-pulse" : "shadow-lg shadow-accent/20 hover:shadow-accent/40 hover:scale-[1.02]"}
+              `}
             >
               {isAnalyzing ? (
                 <>
-                  <Spinner size="sm" />
+                  <Spinner size="sm" color="white" />
                   Analyzing...
                 </>
               ) : (
                 "Analyze & Begin Debate"
               )}
             </Button>
-          </Card.Footer>
+          </div>
         </Card>
 
         {/* Footer hint */}

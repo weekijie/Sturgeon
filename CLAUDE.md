@@ -28,6 +28,11 @@
 
 **No Gemini. No fallbacks. MedGemma only.**
 
+### Brand Identity
+- **Design System**: Medical Dark Theme (Slate #0F172A)
+- **Key UI Elements**: Glassmorphism headers, Pulse animations, Teal accents
+- **Typography**: Inter (Clean, Clinical)
+
 ### AMD GPU Setup (Required)
 ```powershell
 $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
@@ -44,6 +49,7 @@ $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 5. **Throw errors**: Fail fast when preconditions aren't met
 6. **No backups**: Trust the primary mechanism
 7. **Separation of concerns**: Each function has single responsibility
+8. **Medical Dark Theme**: Use `#0F172A` Slate specific branding only. Glassmorphism for depth. Simple beats complex.
 
 ---
 

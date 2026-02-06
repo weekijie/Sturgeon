@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, Button, TextField, Chip } from "@heroui/react";
+import { Card, Button, Input } from "@heroui/react";
 
 // Mock data for demonstration
 const mockDiagnoses = [
@@ -19,16 +19,16 @@ const mockMessages = [
 type Probability = "high" | "medium" | "low";
 
 function ProbabilityBadge({ level }: { level: Probability }) {
-    const colorMap = {
-        high: "success",
-        medium: "warning",
-        low: "danger",
-    } as const;
+    const colorClasses = {
+        high: "bg-success/20 text-success",
+        medium: "bg-warning/20 text-warning",
+        low: "bg-danger/20 text-danger",
+    };
 
     return (
-        <Chip variant={colorMap[level]} size="sm">
+        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${colorClasses[level]}`}>
             {level.charAt(0).toUpperCase() + level.slice(1)}
-        </Chip>
+        </span>
     );
 }
 
@@ -53,14 +53,14 @@ export default function DebatePage() {
     };
 
     return (
-        <main className="min-h-screen flex flex-col">
-            {/* Header */}
-            <header className="border-b border-border px-6 py-4">
+        <main className="min-h-screen flex flex-col bg-background selection:bg-teal/30">
+            {/* Header - Glassmorphism */}
+            <header className="sticky top-0 z-50 border-b border-white/10 bg-background/80 backdrop-blur-md px-6 py-4 shadow-sm">
                 <div className="flex items-center justify-between max-w-7xl mx-auto">
-                    <h1 className="text-xl font-bold">
-                        <span className="text-teal">Sturgeon</span> Diagnostic Debate
+                    <h1 className="text-xl font-bold tracking-tight">
+                        <span className="text-teal drop-shadow-sm">Sturgeon</span> Diagnostic Debate
                     </h1>
-                    <Button variant="secondary" size="sm">
+                    <Button variant="bordered" size="sm" className="hover:border-danger hover:text-danger hover:bg-danger/10 transition-colors">
                         End Session
                     </Button>
                 </div>
@@ -69,18 +69,21 @@ export default function DebatePage() {
             {/* Main Content - Split Layout */}
             <div className="flex-1 flex max-w-7xl mx-auto w-full">
                 {/* Left Panel - Differential Diagnoses */}
-                <aside className="w-80 border-r border-border p-4 overflow-y-auto">
-                    <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-4">
+                <aside className="w-80 border-r border-border p-4 overflow-y-auto h-[calc(100vh-73px)] sticky top-[73px]">
+                    <h2 className="text-xs font-bold text-muted uppercase tracking-widest mb-4 px-1">
                         Differential Diagnoses
                     </h2>
                     <div className="space-y-3">
                         {diagnoses.map((dx) => (
-                            <Card key={dx.id} className="p-3">
+                            <Card
+                                key={dx.id}
+                                className="p-3 transition-all duration-300 hover:border-teal/50 hover:shadow-lg hover:shadow-teal/5 hover:-translate-y-0.5 cursor-default group"
+                            >
                                 <div className="flex items-start justify-between gap-2 mb-2">
-                                    <h3 className="font-medium text-sm leading-tight">{dx.name}</h3>
+                                    <h3 className="font-medium text-sm leading-tight group-hover:text-teal transition-colors">{dx.name}</h3>
                                     <ProbabilityBadge level={dx.probability as Probability} />
                                 </div>
-                                <p className="text-xs text-muted leading-relaxed">
+                                <p className="text-xs text-muted leading-relaxed group-hover:text-foreground/80 transition-colors">
                                     {dx.reasoning}
                                 </p>
                             </Card>
@@ -99,8 +102,8 @@ export default function DebatePage() {
                             >
                                 <div
                                     className={`max-w-[70%] rounded-2xl px-4 py-3 ${msg.role === "user"
-                                            ? "bg-accent text-accent-foreground"
-                                            : "bg-surface text-foreground"
+                                        ? "bg-accent text-accent-foreground"
+                                        : "bg-surface text-foreground"
                                         }`}
                                 >
                                     <p className="text-sm leading-relaxed">{msg.content}</p>
@@ -112,14 +115,14 @@ export default function DebatePage() {
                     {/* Input */}
                     <div className="border-t border-border p-4">
                         <div className="flex gap-3 max-w-4xl mx-auto">
-                            <TextField
+                            <Input
                                 className="flex-1"
                                 placeholder="Challenge the diagnosis..."
                                 value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
+                                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && handleSend()}
                             />
-                            <Button variant="primary" onPress={handleSend}>
+                            <Button variant="solid" onPress={handleSend}>
                                 Send
                             </Button>
                         </div>

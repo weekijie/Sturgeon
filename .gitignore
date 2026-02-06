@@ -39,5 +39,12 @@ npm-debug.log*
 .eggs/
 *.egg
 
+
 # HuggingFace cache (large files)
 .cache/huggingface/
+
+# Deployment & Testing
+.vercel
+coverage/
+*.pem
+next-env.d.ts
