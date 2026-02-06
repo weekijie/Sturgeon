@@ -1,0 +1,34 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+/* Sturgeon Medical Theme - Dark Mode */
+.dark, [data-theme="dark"] {
+  /* Base Colors */
+  --background: oklch(0.13 0.02 250);        /* #0F172A Slate Gray */
+  --foreground: oklch(0.96 0.01 250);        /* #F1F5F9 Off-white */
+  
+  /* Accent - Deep Medical Blue */
+  --accent: oklch(0.45 0.2 250);             /* #1E40AF */
+  --accent-foreground: oklch(0.98 0 0);
+  
+  /* Status Colors */
+  --success: oklch(0.65 0.2 145);            /* #22C55E Green */
+  --success-foreground: oklch(0.15 0 0);
+  --warning: oklch(0.75 0.18 70);            /* #F59E0B Amber */
+  --warning-foreground: oklch(0.15 0 0);
+  --danger: oklch(0.6 0.22 25);              /* #EF4444 Red */
+  --danger-foreground: oklch(0.98 0 0);
+  
+  /* Surface Colors */
+  --surface: oklch(0.18 0.02 250);           /* #1E293B Card Background */
+  --surface-foreground: var(--foreground);
+  
+  /* Teal Secondary Accent */
+  --secondary: oklch(0.55 0.15 175);         /* #0D9488 Teal */
+  --secondary-foreground: oklch(0.98 0 0);
+}
+
+/* Custom utility for teal accent */
+@theme inline {
+  --color-teal: oklch(0.55 0.15 175);
+}
