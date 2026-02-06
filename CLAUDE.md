@@ -1,8 +1,11 @@
 # Sturgeon - Project Instructions
 
-> **Project**: Sturgeon - Diagnostic Debate AI
-> **Workspace**: `c:\Users\weeki\Documents\GitHub\Sturgeon`
-> **Deadline**: February 24, 2026
+> **Project**: Sturgeon - Diagnostic Debate AI  
+> **Workspace**: `c:\Users\weeki\Documents\GitHub\Sturgeon`  
+> **Deadline**: February 24, 2026  
+> **GitHub**: https://github.com/weekijie/Sturgeon
+
+> ⚠️ **New Chat?** Always `@mention` this file so Gemini reads project context!
 
 ---
 
@@ -18,7 +21,7 @@
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | Next.js 14 (App Router) |
+| Frontend | Next.js 14 (App Router) + **HeroUI v3** |
 | Backend | Python FastAPI |
 | AI Model | MedGemma 4B-it (bfloat16, via AutoModelForImageTextToText) |
 | Hosting | Vercel (free) |
@@ -109,10 +112,16 @@ Sturgeon/
 - [x] Set up Next.js frontend
 - [x] Set up Python FastAPI backend
 - [x] Test MedGemma 4B inference locally (AMD GPU working!)
+- [x] Wire up FastAPI endpoints with MedGemma
+- [x] Install HeroUI v3 + Agent Skills
+- [x] Build Upload page (`/`)
+- [x] Build Debate page (`/debate`)
+- [x] Create GitHub repo (weekijie/Sturgeon)
 
 ### In Progress
-- [ ] Wire up FastAPI endpoints with MedGemma
-- [ ] Build frontend UI
+- [ ] Build Summary page (`/summary`)
+- [ ] Connect frontend to backend API
+- [ ] Test full flow
 
 ---
 

@@ -43,6 +43,42 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-02-06] Session 3 - Frontend UI with HeroUI v3
+
+### Added
+- **HeroUI v3** component library (`@heroui/react@beta`, `@heroui/styles@beta`)
+- **HeroUI Agent Skills** for component documentation access
+- `frontend/app/page.tsx` - Upload page with:
+  - File drop zone (drag & drop + click to browse)
+  - Patient history TextArea
+  - "Analyze & Begin Debate" Button with loading state
+- `frontend/app/debate/page.tsx` - Debate page with:
+  - Split layout (diagnosis panel + chat interface)
+  - Diagnosis cards with probability Chips (high/medium/low)
+  - Chat bubbles for AI debate
+  - Challenge input TextField
+
+### Changed
+- `frontend/app/globals.css` - Medical dark theme with HeroUI:
+  - Background: #0F172A (Slate)
+  - Accent: #1E40AF (Medical Blue)
+  - Secondary: #0D9488 (Teal)
+  - Status colors: success/warning/danger
+- `frontend/app/layout.tsx` - Inter font, dark mode, SEO metadata
+- `.gitignore` - Added for Node/Python project
+
+### Technical Notes
+- HeroUI v3 uses **compound components**: `<Card><Card.Header>...</Card.Header></Card>`
+- Uses **oklch color space** for theming
+- **No Provider needed** (unlike v2)
+- Skills available: `node scripts/get_component_docs.mjs Button Card`
+
+### Repository
+- GitHub repo created: https://github.com/weekijie/Sturgeon
+- Initial commit pushed (57 files)
+
+---
+
 ## Future Changes
 
 _Document all code changes below with date and description._
