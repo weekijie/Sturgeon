@@ -31,7 +31,7 @@
 ### Brand Identity
 - **Design System**: Medical Dark Theme (Slate #0F172A)
 - **Key UI Elements**: Glassmorphism headers, Pulse animations, Teal accents
-- **Typography**: Inter (Clean, Clinical)
+- **Typography**: Outfit (Modern, Geometric)
 
 ### AMD GPU Setup (Required)
 ```powershell
