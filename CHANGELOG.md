@@ -138,6 +138,7 @@ All notable changes to this project will be documented in this file.
 ### Architecture Upgrade
 
 Upgraded from MedGemma-only to **Gemini + MedGemma agentic dual-model**:
+
 - **Gemini** (orchestrator): Manages multi-turn conversation, summarizes debate state, formulates focused questions
 - **MedGemma** (callable tool): Handles all clinical reasoning, differential diagnosis, evidence analysis
 - Maps directly to the **Agentic Workflow Prize** criteria: "deploying HAI-DEF models as intelligent agents or callable tools"
@@ -185,6 +186,45 @@ Upgraded from MedGemma-only to **Gemini + MedGemma agentic dual-model**:
 
 - Gemini: `gemini-2.5-flash` -> `gemini-3-flash-preview`
 - MedGemma: `google/medgemma-4b-it` (v1) -> `google/medgemma-1.5-4b-it` (v1.5)
+
+---
+
+---
+
+## [2026-02-07] Session 6 - Image Pipeline & E2E Testing
+
+### Added
+
+- **Image Analysis Pipeline**:
+  - `ai-service/medsiglip.py`: MedSigLIP integration for fast zero-shot image triage (image type detection)
+  - `ai-service/main.py`: `/analyze-image` endpoint supporting multipart uploads
+  - `frontend/app/api/analyze-image/route.ts`: Next.js proxy for image uploads
+  - `frontend/app/page.tsx`: Full image upload UI with preview and analysis results
+  - `frontend/app/context/CaseContext.tsx`: Image findings state management
+- **Testing Tools**:
+  - `verify_models.py`: Script to check model access and dependencies
+  - `test-data/`: Added real NIH Chest X-rays for E2E testing
+
+### Changed
+
+- **MedGemma Integration**:
+  - Updated `ai-service/medgemma.py` to support multimodal input (text + image)
+  - MedGemma now receives MedSigLIP triage summary as context for deeper analysis
+- **Configuration**:
+  - Added `protobuf` and `sentencepiece` to `requirements.txt` (critical for MedSigLIP)
+  - Added `DISABLE_MEDSIGLIP` environment variable support to skip gated model download
+
+### Fixed
+
+- **Gemini JSON Parsing**: Improved robustness in `gemini_orchestrator.py` to auto-repair malformed JSON (missing commas) from LLM responses
+- **Backend Stability**: Added graceful fallback if MedSigLIP is unavailable/disabled
+- **MedSigLIP Loading**: Fixed `NoneType` error by adding `sentencepiece` and `protobuf` dependencies
+
+### Verified
+
+- ✅ Models Access: MedGemma 1.5 4B and MedSigLIP confirmed accessible
+- ✅ E2E Image Flow: Uploaded real NIH Chest X-ray (`test1.png`) -> MedGemma analysis -> Correctly identified cardiomegaly/effusion
+- ✅ Error Handling: Validated behavior with disabled MedSigLIP (graceful fallback to MedGemma-only)
 
 ---
 
