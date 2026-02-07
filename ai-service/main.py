@@ -6,22 +6,25 @@ Architecture:
   - Gemini (Pro/Flash) = Orchestrator for multi-turn debate management
   - MedGemma 4B-it = Medical specialist (callable tool)
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File as FastAPIFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from contextlib import asynccontextmanager
+from PIL import Image
 import logging
 import json
 import re
 import os
 import uuid
+import io
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
 load_dotenv()
 
 from .medgemma import get_model
+from .medsiglip import get_siglip
 from .gemini_orchestrator import (
     get_orchestrator,
     ClinicalState,
@@ -42,15 +45,16 @@ logger = logging.getLogger(__name__)
 # Maps session_id -> ClinicalState
 _sessions: dict[str, ClinicalState] = {}
 
-# Flag: is Gemini orchestrator available?
+# Flags: which optional services are available?
 _gemini_available = False
+_siglip_available = False
 
 
 # Model lifecycle - load on startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load MedGemma model and initialize Gemini orchestrator on startup."""
-    global _gemini_available
+    """Load MedGemma model, MedSigLIP triage, and Gemini orchestrator on startup."""
+    global _gemini_available, _siglip_available
     
     logger.info("Starting Sturgeon AI Service...")
     
@@ -58,6 +62,21 @@ async def lifespan(app: FastAPI):
     model = get_model()
     model.load()
     logger.info("MedGemma loaded.")
+    
+    # Load MedSigLIP for image triage (optional - graceful fallback)
+    if os.getenv("DISABLE_MEDSIGLIP"):
+        logger.info("MedSigLIP disabled via environment variable.")
+        _siglip_available = False
+    else:
+        try:
+            siglip = get_siglip()
+            siglip.load()
+            _siglip_available = True
+            logger.info("MedSigLIP loaded. Image triage enabled.")
+        except Exception as e:
+            logger.warning(f"MedSigLIP not available: {e}")
+            logger.warning("Image triage will be skipped; MedGemma will still analyze images directly.")
+            _siglip_available = False
     
     # Initialize Gemini orchestrator (optional - graceful fallback)
     orchestrator = get_orchestrator()
@@ -122,6 +141,7 @@ class DebateTurnRequest(BaseModel):
     previous_rounds: list[dict]
     user_challenge: str
     session_id: Optional[str] = None  # For session state tracking
+    image_context: Optional[str] = None  # MedSigLIP + MedGemma image findings
 
 class DebateTurnResponse(BaseModel):
     ai_response: str
@@ -142,6 +162,19 @@ class SummaryResponse(BaseModel):
     reasoning_chain: list[str]
     ruled_out: list[str]
     next_steps: list[str]
+
+
+class ImageFinding(BaseModel):
+    label: str
+    score: float
+
+class ImageAnalysisResponse(BaseModel):
+    image_type: str
+    image_type_confidence: float
+    modality: str
+    triage_findings: list[ImageFinding]
+    triage_summary: str
+    medgemma_analysis: str
 
 
 def extract_json(text: str) -> dict:
@@ -208,8 +241,10 @@ async def health_check():
     return {
         "status": "healthy",
         "model_loaded": model.model is not None,
+        "medsiglip_loaded": _siglip_available,
         "gemini_orchestrator": _gemini_available,
         "mode": "agentic" if _gemini_available else "medgemma-only",
+        "image_triage": "medsiglip+medgemma" if _siglip_available else "medgemma-only",
         "active_sessions": len(_sessions),
     }
 
@@ -282,6 +317,7 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
             patient_history=request.patient_history,
             lab_values=request.lab_values,
             differential=[d.model_dump() for d in request.current_differential],
+            image_context=request.image_context or "",
         )
         logger.info(f"Created new session: {session_id}")
     
@@ -362,6 +398,106 @@ def _parse_differential(updated_diff: list) -> list[Diagnosis]:
                 suggested_tests=tests if isinstance(tests, list) else [tests]
             ))
     return diagnoses
+
+
+@app.post("/analyze-image", response_model=ImageAnalysisResponse)
+async def analyze_image(file: UploadFile = FastAPIFile(...)):
+    """Analyze a medical image using MedSigLIP triage + MedGemma deep analysis.
+    
+    Pipeline:
+    1. MedSigLIP: Fast zero-shot classification (~100ms) — identifies image type
+       and preliminary findings with confidence scores
+    2. MedGemma: Deep clinical interpretation — receives the image + MedSigLIP
+       triage summary as context for focused analysis
+    """
+    logger.info(f"Analyzing image: {file.filename} ({file.content_type})")
+    
+    # Validate file type
+    allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type: {file.content_type}. "
+                   f"Supported: {', '.join(allowed_types)}"
+        )
+    
+    # Read and open image
+    try:
+        image_bytes = await file.read()
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        logger.info(f"Image loaded: {image.size[0]}x{image.size[1]}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read image: {e}")
+    
+    # Step 1: MedSigLIP triage (fast zero-shot classification)
+    triage_summary = ""
+    triage_result = {
+        "image_type": "medical image",
+        "image_type_confidence": 0.0,
+        "modality": "unknown",
+        "findings": [],
+        "triage_summary": "MedSigLIP not available; proceeding with MedGemma direct analysis.",
+    }
+    
+    if _siglip_available:
+        try:
+            siglip = get_siglip()
+            triage_result = siglip.analyze_findings(image)
+            triage_summary = triage_result["triage_summary"]
+            logger.info(
+                f"MedSigLIP triage: {triage_result['image_type']} "
+                f"({triage_result['image_type_confidence']:.1%}), "
+                f"modality={triage_result['modality']}"
+            )
+        except Exception as e:
+            logger.error(f"MedSigLIP triage failed: {e}")
+            triage_summary = "MedSigLIP triage failed; proceeding with MedGemma direct analysis."
+    else:
+        logger.info("MedSigLIP not loaded, skipping triage. MedGemma will analyze directly.")
+    
+    # Step 2: MedGemma deep analysis (multimodal — image + text context)
+    model = get_model()
+    
+    medgemma_prompt = f"""Analyze this medical image in detail.
+
+{triage_summary}
+
+Provide a thorough clinical interpretation including:
+1. **Image type and quality**: What type of medical image is this? Is the quality adequate for interpretation?
+2. **Key findings**: Describe all significant findings, both normal and abnormal.
+3. **Clinical significance**: What do these findings suggest clinically?
+4. **Differential considerations**: What conditions should be considered based on these findings?
+5. **Recommended follow-up**: What additional imaging or tests would help clarify the findings?
+
+Be specific and cite visible features in the image."""
+    
+    try:
+        medgemma_analysis = model.generate(
+            medgemma_prompt,
+            system_prompt=(
+                "You are a specialist radiologist and medical imaging expert. "
+                "Analyze medical images with precision, citing specific visual "
+                "findings. Be thorough but concise."
+            ),
+            image=image,
+            max_new_tokens=2048,
+        )
+        logger.info(f"MedGemma analysis: {len(medgemma_analysis)} chars")
+    except Exception as e:
+        logger.error(f"MedGemma image analysis failed: {e}")
+        medgemma_analysis = f"Image analysis encountered an error: {str(e)}"
+    
+    return ImageAnalysisResponse(
+        image_type=triage_result.get("image_type", "medical image"),
+        image_type_confidence=triage_result.get("image_type_confidence", 0.0),
+        modality=triage_result.get("modality", "unknown"),
+        triage_findings=[
+            ImageFinding(label=f["label"], score=f["score"])
+            for f in triage_result.get("findings", [])
+        ],
+        triage_summary=triage_result.get("triage_summary", ""),
+        medgemma_analysis=medgemma_analysis,
+    )
 
 
 @app.post("/summary", response_model=SummaryResponse)

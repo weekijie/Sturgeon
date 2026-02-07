@@ -15,7 +15,7 @@ Sturgeon uses an **agentic dual-model architecture**:
 - **MedGemma 1.5 4B-it** (HAI-DEF model) = Medical Specialist. Handles all clinical reasoning, differential diagnosis, medical image analysis, and evidence evaluation as a callable tool.
 - **Gemini 3 Flash** = Orchestrator. Manages multi-turn conversation context, summarizes debate state, formulates focused questions for MedGemma, and synthesizes responses.
 
-This maps directly to the Agentic Workflow Prize: *"deploying HAI-DEF models as intelligent agents or callable tools."*
+This maps directly to the Agentic Workflow Prize: _"deploying HAI-DEF models as intelligent agents or callable tools."_
 
 ```
 User challenge
@@ -27,13 +27,13 @@ User challenge
 
 ## Tech Stack
 
-| Layer        | Technology                                      |
-|------------- |-------------------------------------------------|
-| Frontend     | Next.js 14 (App Router) + HeroUI v3             |
-| Backend      | Python FastAPI                                   |
+| Layer        | Technology                                                 |
+| ------------ | ---------------------------------------------------------- |
+| Frontend     | Next.js 14 (App Router) + HeroUI v3                        |
+| Backend      | Python FastAPI                                             |
 | Medical AI   | MedGemma 1.5 4B-it (bfloat16, AutoModelForImageTextToText) |
-| Orchestrator | Gemini 3 Flash Preview (Google AI API)           |
-| Hosting      | Vercel (frontend) + local/Kaggle (AI)            |
+| Orchestrator | Gemini 3 Flash Preview (Google AI API)                     |
+| Hosting      | Vercel (frontend) + local/Kaggle (AI)                      |
 
 ## Quick Start
 
@@ -104,13 +104,14 @@ Sturgeon/
 
 ## API Endpoints
 
-| Endpoint          | Method | Description                                |
-|-------------------|--------|--------------------------------------------|
-| `/health`         | GET    | Health check + orchestrator status         |
-| `/extract-labs`   | POST   | Extract structured lab values from text    |
-| `/differential`   | POST   | Generate initial differential diagnoses    |
-| `/debate-turn`    | POST   | Handle a debate round (orchestrated)       |
-| `/summary`        | POST   | Generate final diagnosis summary           |
+| Endpoint         | Method | Description                                                         |
+| ---------------- | ------ | ------------------------------------------------------------------- |
+| `/health`        | GET    | Health check + orchestrator status                                  |
+| `/analyze-image` | POST   | Analyze medical images (MedSigLIP triage + MedGemma interpretation) |
+| `/extract-labs`  | POST   | Extract structured lab values from text                             |
+| `/differential`  | POST   | Generate initial differential diagnoses                             |
+| `/debate-turn`   | POST   | Handle a debate round (orchestrated)                                |
+| `/summary`       | POST   | Generate final diagnosis summary                                    |
 
 ## License
 

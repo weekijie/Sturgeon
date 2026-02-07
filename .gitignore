@@ -49,3 +49,6 @@ npm-debug.log*
 coverage/
 *.pem
 next-env.d.ts
+
+# Test data (medical images, etc.)
+test-data/

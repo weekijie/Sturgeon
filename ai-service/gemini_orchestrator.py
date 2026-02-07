@@ -40,6 +40,7 @@ class ClinicalState:
     key_findings: list[str] = field(default_factory=list)
     ruled_out: list[str] = field(default_factory=list)
     debate_round: int = 0
+    image_context: str = ""  # MedSigLIP triage + MedGemma interpretation
     
     def to_summary(self) -> str:
         """Produce a compact text summary for Gemini's context."""
@@ -58,6 +59,9 @@ class ClinicalState:
                 else:
                     labs.append(f"  {name}: {data}")
             lines.append("Labs:\n" + "\n".join(labs))
+        
+        if self.image_context:
+            lines.append(f"Medical Image Analysis:\n{self.image_context}")
         
         if self.differential:
             diff_lines = []
@@ -415,13 +419,21 @@ CRITICAL: The "ai_response" field must be a plain conversational text string, NO
         try:
             data = json.loads(text)
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response: {e}\nText: {text[:500]}")
-            # Return a safe fallback
-            data = {
-                "ai_response": text[:500] if text else "I need to reconsider this case.",
-                "updated_differential": [],
-                "suggested_test": None,
-            }
+            # Attempt to repair common JSON errors (e.g., missing commas between fields)
+            try:
+                import re
+                # Insert missing commas between quote-key pairs
+                fixed_text = re.sub(r'"\s*\n\s*"', '",\n"', text)
+                data = json.loads(fixed_text)
+                logger.info("Successfully repaired malformed JSON (missing commas)")
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse Gemini response: {e}\nText: {text[:500]}")
+                # Return a safe fallback
+                data = {
+                    "ai_response": text[:500] if text else "I need to reconsider this case.",
+                    "updated_differential": [],
+                    "suggested_test": None,
+                }
         
         # Fix double-wrapped JSON: if ai_response is itself a JSON string
         # containing the expected fields, unwrap it

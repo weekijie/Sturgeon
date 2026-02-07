@@ -16,11 +16,27 @@ export interface DebateRound {
   ai_response: string;
 }
 
+export interface ImageFinding {
+  label: string;
+  score: number;
+}
+
+export interface ImageAnalysis {
+  image_type: string;
+  image_type_confidence: number;
+  modality: string;
+  triage_findings: ImageFinding[];
+  triage_summary: string;
+  medgemma_analysis: string;
+}
+
 export interface CaseData {
   patientHistory: string;
   labValues: Record<string, unknown>;
   differential: Diagnosis[];
   debateRounds: DebateRound[];
+  imageAnalysis: ImageAnalysis | null;
+  imagePreviewUrl: string | null; // data URL for image preview in debate
 }
 
 interface CaseContextType {
@@ -30,6 +46,7 @@ interface CaseContextType {
   setDifferential: (diagnoses: Diagnosis[]) => void;
   addDebateRound: (round: DebateRound) => void;
   updateDifferential: (diagnoses: Diagnosis[]) => void;
+  setImageAnalysis: (analysis: ImageAnalysis, previewUrl: string) => void;
   resetCase: () => void;
 }
 
@@ -38,6 +55,8 @@ const defaultCaseData: CaseData = {
   labValues: {},
   differential: [],
   debateRounds: [],
+  imageAnalysis: null,
+  imagePreviewUrl: null,
 };
 
 const CaseContext = createContext<CaseContextType | null>(null);
@@ -68,6 +87,14 @@ export function CaseProvider({ children }: { children: ReactNode }) {
     setCaseData((prev) => ({ ...prev, differential: diagnoses }));
   };
 
+  const setImageAnalysis = (analysis: ImageAnalysis, previewUrl: string) => {
+    setCaseData((prev) => ({
+      ...prev,
+      imageAnalysis: analysis,
+      imagePreviewUrl: previewUrl,
+    }));
+  };
+
   const resetCase = () => {
     setCaseData(defaultCaseData);
   };
@@ -81,6 +108,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         setDifferential,
         addDebateRound,
         updateDifferential,
+        setImageAnalysis,
         resetCase,
       }}
     >

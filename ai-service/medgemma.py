@@ -8,6 +8,8 @@ Upgraded from v1 (google/medgemma-4b-it) to v1.5 for:
 - Structured data extraction from lab reports and EHR data
 """
 from transformers import AutoProcessor, AutoModelForImageTextToText
+from PIL import Image
+from typing import Optional
 import torch
 import logging
 
@@ -45,8 +47,22 @@ class MedGemmaModel:
         logger.info("Model loaded successfully")
         return self
     
-    def generate(self, prompt: str, max_new_tokens: int = 1024, system_prompt: str = None) -> str:
-        """Generate response from MedGemma using chat template."""
+    def generate(
+        self,
+        prompt: str,
+        max_new_tokens: int = 1024,
+        system_prompt: str = None,
+        image: Optional[Image.Image] = None,
+    ) -> str:
+        """Generate response from MedGemma using chat template.
+        
+        Args:
+            prompt: Text prompt for the model
+            max_new_tokens: Maximum tokens to generate
+            system_prompt: Optional system prompt
+            image: Optional PIL Image for multimodal analysis
+                   (chest X-ray, dermatology, pathology, etc.)
+        """
         if self.model is None:
             raise RuntimeError("Model not loaded. Call load() first.")
         
@@ -57,10 +73,18 @@ class MedGemmaModel:
                 "role": "system", 
                 "content": [{"type": "text", "text": system_prompt}]
             })
-        messages.append({
-            "role": "user", 
-            "content": [{"type": "text", "text": prompt}]
-        })
+        
+        # Build user content: image (if any) + text
+        user_content = []
+        if image is not None:
+            # Convert to RGB if needed (e.g., RGBA PNGs, grayscale DICOM)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            user_content.append({"type": "image", "image": image})
+            logger.info(f"Image attached: {image.size[0]}x{image.size[1]} {image.mode}")
+        user_content.append({"type": "text", "text": prompt})
+        
+        messages.append({"role": "user", "content": user_content})
         
         # Apply chat template using processor
         inputs = self.processor.apply_chat_template(

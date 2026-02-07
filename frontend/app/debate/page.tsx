@@ -44,11 +44,18 @@ export default function DebatePage() {
     if (caseData.differential.length > 0) {
       didInit.current = true;
       setDiagnoses(caseData.differential);
-      // Add initial AI message
-      setMessages([{
-        role: "ai",
-        content: `Based on the patient history, I've identified ${caseData.differential.length} potential diagnoses. The primary concern is ${caseData.differential[0]?.name || "unknown"}. Challenge my reasoning or ask about specific aspects of the differential.`
-      }]);
+      // Build initial AI message
+      const hasImage = !!caseData.imageAnalysis;
+      const primaryDx = caseData.differential[0]?.name || "unknown";
+      let initMsg = `Based on the ${hasImage ? "uploaded medical image and " : ""}patient history, I've identified ${caseData.differential.length} potential diagnoses. The primary concern is **${primaryDx}**.`;
+      
+      if (hasImage && caseData.imageAnalysis) {
+        initMsg += ` The ${caseData.imageAnalysis.image_type} (${caseData.imageAnalysis.modality}) has been analyzed using MedSigLIP triage and MedGemma interpretation.`;
+      }
+      
+      initMsg += ` Challenge my reasoning or ask about specific aspects of the differential.`;
+      
+      setMessages([{ role: "ai", content: initMsg }]);
     } else {
       // No data, redirect back to upload
       router.push("/");
@@ -75,6 +82,7 @@ export default function DebatePage() {
           previous_rounds: caseData.debateRounds,
           user_challenge: userMessage,
           session_id: sessionId,
+          image_context: caseData.imageAnalysis?.triage_summary || null,
         }),
       });
 
@@ -156,6 +164,32 @@ export default function DebatePage() {
       <div className="flex-1 flex max-w-7xl mx-auto w-full">
         {/* Left Panel - Differential Diagnoses */}
         <aside className="w-80 border-r border-border p-4 overflow-y-auto h-[calc(100vh-73px)] sticky top-[73px]">
+          {/* Uploaded Image Preview */}
+          {caseData.imagePreviewUrl && (
+            <div className="mb-4">
+              <h2 className="text-xs font-bold text-muted uppercase tracking-widest mb-2 px-1">
+                Medical Image
+              </h2>
+              <div className="rounded-lg border border-border overflow-hidden">
+                <img
+                  src={caseData.imagePreviewUrl}
+                  alt="Uploaded medical image"
+                  className="w-full object-contain max-h-48"
+                />
+              </div>
+              {caseData.imageAnalysis && (
+                <div className="mt-2 px-1">
+                  <p className="text-[10px] text-teal/70 font-medium uppercase tracking-wider">
+                    {caseData.imageAnalysis.image_type}
+                  </p>
+                  <p className="text-[10px] text-muted">
+                    {caseData.imageAnalysis.modality} — {(caseData.imageAnalysis.image_type_confidence * 100).toFixed(0)}% confidence
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           <h2 className="text-xs font-bold text-muted uppercase tracking-widest mb-4 px-1">
             Differential Diagnoses
           </h2>
