@@ -1,6 +1,10 @@
 """
 Sturgeon AI Service - FastAPI Backend
-MedGemma-powered diagnostic reasoning
+Gemini-orchestrated, MedGemma-powered diagnostic reasoning
+
+Architecture:
+  - Gemini (Pro/Flash) = Orchestrator for multi-turn debate management
+  - MedGemma 4B-it = Medical specialist (callable tool)
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,8 +14,18 @@ from contextlib import asynccontextmanager
 import logging
 import json
 import re
+import os
+import uuid
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
 
 from .medgemma import get_model
+from .gemini_orchestrator import (
+    get_orchestrator,
+    ClinicalState,
+)
 from .prompts import (
     SYSTEM_PROMPT,
     EXTRACT_LABS_PROMPT,
@@ -24,23 +38,48 @@ from .prompts import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# In-memory session store for clinical states
+# Maps session_id -> ClinicalState
+_sessions: dict[str, ClinicalState] = {}
+
+# Flag: is Gemini orchestrator available?
+_gemini_available = False
+
 
 # Model lifecycle - load on startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load MedGemma model on startup."""
+    """Load MedGemma model and initialize Gemini orchestrator on startup."""
+    global _gemini_available
+    
     logger.info("Starting Sturgeon AI Service...")
+    
+    # Load MedGemma (required)
     model = get_model()
     model.load()
-    logger.info("MedGemma loaded. Ready to serve requests.")
+    logger.info("MedGemma loaded.")
+    
+    # Initialize Gemini orchestrator (optional - graceful fallback)
+    orchestrator = get_orchestrator()
+    orchestrator.medgemma = model
+    try:
+        orchestrator.initialize()
+        _gemini_available = True
+        logger.info("Gemini orchestrator initialized. Agentic mode enabled.")
+    except RuntimeError as e:
+        logger.warning(f"Gemini orchestrator not available: {e}")
+        logger.warning("Falling back to MedGemma-only mode for debate turns.")
+        _gemini_available = False
+    
+    logger.info("Ready to serve requests.")
     yield
     logger.info("Shutting down...")
 
 
 app = FastAPI(
     title="Sturgeon AI Service",
-    description="MedGemma-powered diagnostic debate API",
-    version="0.1.0",
+    description="Gemini-orchestrated, MedGemma-powered diagnostic debate API",
+    version="0.2.0",
     lifespan=lifespan
 )
 
@@ -82,11 +121,14 @@ class DebateTurnRequest(BaseModel):
     current_differential: list[Diagnosis]
     previous_rounds: list[dict]
     user_challenge: str
+    session_id: Optional[str] = None  # For session state tracking
 
 class DebateTurnResponse(BaseModel):
     ai_response: str
     updated_differential: list[Diagnosis]
     suggested_test: Optional[str] = None
+    session_id: Optional[str] = None  # Returned for session continuity
+    orchestrated: bool = False  # Whether Gemini orchestrator was used
 
 class SummaryRequest(BaseModel):
     patient_history: str
@@ -163,7 +205,13 @@ def format_rounds(rounds: list) -> str:
 @app.get("/health")
 async def health_check():
     model = get_model()
-    return {"status": "healthy", "model_loaded": model.model is not None}
+    return {
+        "status": "healthy",
+        "model_loaded": model.model is not None,
+        "gemini_orchestrator": _gemini_available,
+        "mode": "agentic" if _gemini_available else "medgemma-only",
+        "active_sessions": len(_sessions),
+    }
 
 
 @app.post("/extract-labs", response_model=ExtractLabsResponse)
@@ -213,9 +261,59 @@ async def generate_differential(request: DifferentialRequest):
 
 @app.post("/debate-turn", response_model=DebateTurnResponse)
 async def debate_turn(request: DebateTurnRequest):
-    """Handle a debate round - respond to user challenge."""
+    """Handle a debate round - orchestrated by Gemini, powered by MedGemma."""
     logger.info(f"Processing debate turn: {request.user_challenge[:50]}...")
     
+    if _gemini_available:
+        return await _debate_turn_orchestrated(request)
+    else:
+        return await _debate_turn_medgemma_only(request)
+
+
+async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnResponse:
+    """Orchestrated debate turn: Gemini manages conversation, MedGemma provides
+    medical reasoning."""
+    orchestrator = get_orchestrator()
+    
+    # Get or create session
+    session_id = request.session_id or str(uuid.uuid4())
+    if session_id not in _sessions:
+        _sessions[session_id] = ClinicalState(
+            patient_history=request.patient_history,
+            lab_values=request.lab_values,
+            differential=[d.model_dump() for d in request.current_differential],
+        )
+        logger.info(f"Created new session: {session_id}")
+    
+    clinical_state = _sessions[session_id]
+    
+    # Keep differential in sync with frontend state
+    clinical_state.differential = [d.model_dump() for d in request.current_differential]
+    
+    try:
+        result = orchestrator.process_debate_turn(
+            user_challenge=request.user_challenge,
+            clinical_state=clinical_state,
+            previous_rounds=request.previous_rounds[-3:] if request.previous_rounds else None,
+        )
+        
+        # Parse updated differential with robust field name handling
+        diagnoses = _parse_differential(result.get("updated_differential", []))
+        
+        return DebateTurnResponse(
+            ai_response=result.get("ai_response", "I need more information to respond."),
+            updated_differential=diagnoses if diagnoses else request.current_differential,
+            suggested_test=result.get("suggested_test"),
+            session_id=session_id,
+            orchestrated=True,
+        )
+    except Exception as e:
+        logger.error(f"Orchestrator error: {e}. Falling back to MedGemma-only.")
+        return await _debate_turn_medgemma_only(request)
+
+
+async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnResponse:
+    """Fallback: MedGemma-only debate turn (original implementation)."""
     model = get_model()
     formatted_labs = format_lab_values(request.lab_values)
     formatted_diff = format_differential([d.model_dump() for d in request.current_differential])
@@ -233,12 +331,23 @@ async def debate_turn(request: DebateTurnRequest):
     data = extract_json(response)
     
     # Parse updated differential with robust field name handling
-    diagnoses = []
-    updated_diff = data.get("updated_differential", [])
+    diagnoses = _parse_differential(data.get("updated_differential", []))
     
+    return DebateTurnResponse(
+        ai_response=data.get("ai_response", "I need more information to respond."),
+        updated_differential=diagnoses if diagnoses else request.current_differential,
+        suggested_test=data.get("suggested_test"),
+        orchestrated=False,
+    )
+
+
+def _parse_differential(updated_diff: list) -> list[Diagnosis]:
+    """Parse differential list with robust field name handling for both
+    MedGemma and Gemini responses."""
+    diagnoses = []
     for dx in updated_diff:
         if isinstance(dx, dict):
-            # Handle various field name variations from MedGemma
+            # Handle various field name variations
             name = dx.get("name") or dx.get("diagnosis") or dx.get("diagnosis_name") or "Unknown"
             prob = dx.get("probability") or dx.get("likelihood") or "medium"
             support = dx.get("supporting_evidence") or dx.get("supporting") or dx.get("evidence_for") or []
@@ -252,12 +361,7 @@ async def debate_turn(request: DebateTurnRequest):
                 against_evidence=against if isinstance(against, list) else [against],
                 suggested_tests=tests if isinstance(tests, list) else [tests]
             ))
-    
-    return DebateTurnResponse(
-        ai_response=data.get("ai_response", "I need more information to respond."),
-        updated_differential=diagnoses if diagnoses else request.current_differential,
-        suggested_test=data.get("suggested_test")
-    )
+    return diagnoses
 
 
 @app.post("/summary", response_model=SummaryResponse)

@@ -67,12 +67,12 @@ In medical dramas like House MD, correct diagnoses emerge from debate—not from
 
 **How Sturgeon meets this**:
 
-| Agentic Criterion            | Sturgeon Implementation                         |
-| ---------------------------- | ----------------------------------------------- |
-| Complex workflow reimagined  | Differential diagnosis via multi-round debate   |
-| HAI-DEF as intelligent agent | MedGemma reasons, defends, updates autonomously |
-| Callable tool behavior       | Extract labs → Reason → Suggest tests → Update  |
-| Improved outcomes            | Catches overlooked diagnoses                    |
+| Agentic Criterion            | Sturgeon Implementation                                   |
+| ---------------------------- | --------------------------------------------------------- |
+| Complex workflow reimagined  | Differential diagnosis via multi-round debate             |
+| HAI-DEF as intelligent agent | MedGemma as callable medical specialist tool              |
+| Callable tool behavior       | Gemini orchestrator calls MedGemma for: extract labs, reason, analyze images, update differential |
+| Improved outcomes            | Catches overlooked diagnoses through structured debate    |
 
 ---
 
@@ -103,40 +103,44 @@ _Source: [medgemma_hackathon_analysis.md](file:///C:/Users/weeki/.gemini/antigra
 
 ## Technical Stack
 
-**Single AI model. No alternatives. No Gemini.**
+### Dual-Model Agentic Architecture
 
-| Layer    | Technology                            | Purpose               |
-| -------- | ------------------------------------- | --------------------- |
-| Frontend | Next.js 14 (App Router)               | UI + API routes       |
-| Backend  | Python FastAPI                        | MedGemma inference    |
-| AI Model | **MedGemma 4B-it** (bfloat16)         | ALL medical reasoning |
-| Hosting  | Vercel (frontend) + local/Kaggle (AI) | Free deployment       |
+| Layer        | Technology                                | Purpose                          |
+| ------------ | ----------------------------------------- | -------------------------------- |
+| Frontend     | Next.js 14 (App Router) + HeroUI v3      | UI + API routes                  |
+| Backend      | Python FastAPI                            | Orchestration + inference        |
+| Medical AI   | **MedGemma 4B-it** (bfloat16)            | ALL medical reasoning + images   |
+| Orchestrator | **Gemini Pro/Flash** (Google AI API)      | Conversation management + debate flow |
+| Hosting      | Vercel (frontend) + local/Kaggle (AI)     | Free deployment                  |
 
-### Why MedGemma Only
+### Why Dual-Model (MedGemma + Gemini)
 
-1. **HAI-DEF requirement**: Must use at least one HAI-DEF model
-2. **Maximize utilization score**: 20% of judging is "effective HAI-DEF use"
-3. **Simplicity**: One model = fewer failure points, easier debugging
-4. **MedGemma capabilities cover all needs**: Document understanding, clinical reasoning, text generation
+1. **HAI-DEF requirement**: MedGemma handles ALL medical reasoning (maximizes HAI-DEF utilization score)
+2. **Agentic Workflow Prize**: MedGemma as callable medical specialist tool, Gemini as orchestrator -- textbook agentic architecture
+3. **MedGemma's limitation**: Not optimized for multi-turn conversation. Gemini handles what MedGemma can't (context management, summarization)
+4. **Competition rules**: Gemini is explicitly permitted as an external tool (Section 6.c of rules)
+5. **Quality**: Each model does what it's best at -- MedGemma for medicine, Gemini for conversation
 
 ### MedGemma 4B Capabilities Used
 
 _Source: [hai_def_models_reference.md](file:///C:/Users/weeki/.gemini/antigravity/brain/0317cc99-b5d0-40dd-a0ee-1df59c76af76/hai_def_models_reference.md)_
 
-| Capability             | Sturgeon Usage                  |
-| ---------------------- | ------------------------------- |
-| Document Understanding | Extract lab values from PDF     |
-| Medical Text Reasoning | Generate differential diagnoses |
-| Clinical Q&A           | Respond to challenges           |
-| Text Generation        | Produce explanations            |
+| Capability                | Sturgeon Usage                              |
+| ------------------------- | ------------------------------------------- |
+| Document Understanding    | Extract lab values from PDF                 |
+| Medical Text Reasoning    | Generate differential diagnoses             |
+| Clinical Q&A              | Respond to challenges                       |
+| Text Generation           | Produce explanations                        |
+| **Medical Image Analysis**| Chest X-ray, dermatology, pathology, fundus |
 
 ### MedGemma 4B Limitations & Mitigations
 
-| Limitation                   | Mitigation                                            |
-| ---------------------------- | ----------------------------------------------------- |
-| Not optimized for multi-turn | Re-inject full context each round (structured debate) |
-| Prompt sensitivity           | Carefully engineered prompts (see below)              |
-| Not clinical-grade           | Clear disclaimers, educational framing                |
+| Limitation                   | Mitigation                                              |
+| ---------------------------- | ------------------------------------------------------- |
+| Not optimized for multi-turn | Gemini orchestrates conversation, MedGemma handles medical queries as single-turn calls |
+| Prompt sensitivity           | Carefully engineered prompts (see below)                |
+| Not clinical-grade           | Clear disclaimers, educational framing                  |
+| Single-image tasks only      | One image per MedGemma call, orchestrated by Gemini     |
 
 ---
 
@@ -146,39 +150,66 @@ _Source: [hai_def_models_reference.md](file:///C:/Users/weeki/.gemini/antigravit
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         NEXT.JS FRONTEND                            │
 │                                                                     │
-│  /                    → Upload lab PDF, enter patient history       │
+│  /                    → Upload labs, images, patient history        │
 │  /debate              → Chat-like debate interface                  │
 │  /summary             → Final diagnosis display                     │
 │                                                                     │
 │  /api/extract         → Proxy to Python backend                     │
 │  /api/differential    → Proxy to Python backend                     │
 │  /api/debate          → Proxy to Python backend                     │
+│  /api/analyze-image   → Proxy to Python backend                     │
 └─────────────────────────────────┬───────────────────────────────────┘
                                   │ HTTP (localhost:8000)
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                       PYTHON FASTAPI                                │
 │                                                                     │
-│  POST /extract-labs                                                 │
-│       Input: Lab report text/PDF                                    │
-│       Output: Structured lab values                                 │
-│       Model: MedGemma 4B                                            │
-│                                                                     │
-│  POST /differential                                                 │
-│       Input: Lab values + patient history                           │
-│       Output: 3-4 differential diagnoses with reasoning             │
-│       Model: MedGemma 4B                                            │
-│                                                                     │
-│  POST /debate-turn                                                  │
-│       Input: Full case context + user challenge                     │
-│       Output: Defense/update + revised differential                 │
-│       Model: MedGemma 4B                                            │
-│                                                                     │
-│  POST /summary                                                      │
-│       Input: Full case context + final differential                 │
-│       Output: Final diagnosis with reasoning chain                  │
-│       Model: MedGemma 4B                                            │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │              GEMINI ORCHESTRATOR                             │   │
+│  │                                                             │   │
+│  │  - Manages multi-turn conversation context                  │   │
+│  │  - Maintains structured clinical state                      │   │
+│  │  - Summarizes debate history                                │   │
+│  │  - Decides when to call MedGemma                            │   │
+│  │  - Routes medical questions to MedGemma                     │   │
+│  │  - Formats final responses to user                          │   │
+│  └──────────────────────┬──────────────────────────────────────┘   │
+│                          │ (calls as tool)                          │
+│                          ▼                                          │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │              MEDGEMMA SPECIALIST (HAI-DEF)                  │   │
+│  │                                                             │   │
+│  │  - Extract lab values from text/PDF                         │   │
+│  │  - Analyze medical images (X-ray, derm, pathology)          │   │
+│  │  - Generate differential diagnoses                          │   │
+│  │  - Clinical reasoning for specific questions                │   │
+│  │  - Evidence-based responses with citations                  │   │
+│  └─────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow Per Debate Turn
+
+```
+User sends challenge
+        │
+        ▼
+Gemini receives: clinical_state + conversation_summary + user_challenge
+        │
+        ├─→ Decides: Does this need MedGemma? (medical question)
+        │       │
+        │       ▼ YES
+        │   MedGemma receives: focused medical query + relevant patient data
+        │   MedGemma returns: clinical reasoning + updated differential
+        │       │
+        │       ▼
+        │   Gemini integrates MedGemma's response
+        │
+        ├─→ NO (conversational/clarification)
+        │   Gemini handles directly
+        │
+        ▼
+Gemini returns: response + updated clinical_state + updated conversation_summary
 ```
 
 ---
@@ -465,12 +496,19 @@ Sturgeon/
 - [x] `/debate-turn` endpoint working
 - [x] `/summary` endpoint working
 - [x] Full E2E flow from upload to summary
-- [ ] Multi-turn debate chat persistence (needs re-architecture)
+- [x] Architecture upgraded to Gemini + MedGemma agentic dual-model
+- [ ] Implement Gemini orchestrator + structured clinical state
+- [ ] Fix multi-turn debate with Gemini as conversation manager
+- [ ] Add medical image analysis (MedGemma multimodal)
 - [ ] 2 demo cases prepared and tested
 - [ ] UI polished
 
 ### Week 3 Milestones
 
+- [ ] Add lab report file parsing (`/extract-labs`)
+- [ ] Add session persistence (localStorage)
+- [ ] RAG with clinical guidelines (stretch goal)
+- [ ] Fine-tune MedGemma for debate (stretch goal)
 - [ ] Demo video recorded (≤3 min)
 - [ ] Write-up completed (≤3 pages)
 - [ ] GitHub repo cleaned up with README
@@ -547,13 +585,14 @@ Sturgeon/
 
 ## Risk Mitigation
 
-| Risk                         | Probability | Impact | Mitigation                         |
-| ---------------------------- | ----------- | ------ | ---------------------------------- |
-| MedGemma multi-turn degrades | Medium      | High   | Re-inject full context each round  |
-| Quantization hurts quality   | N/A         | N/A    | Using FP16 (full quality)          |
-| Time overrun                 | Medium      | High   | Scope down to labs-only first      |
-| Demo case fails on video     | Medium      | High   | Prepare 3 cases, use most reliable |
-| GPU issues on 9060 XT        | Low         | Medium | Kaggle backup ready                |
+| Risk                         | Probability | Impact | Mitigation                                     |
+| ---------------------------- | ----------- | ------ | ---------------------------------------------- |
+| MedGemma multi-turn degrades | ~~Medium~~  | ~~High~~ | Solved: Gemini handles multi-turn, MedGemma does single-turn medical queries |
+| Gemini API downtime          | Low         | High   | Can fall back to structured-state-only approach |
+| Quantization hurts quality   | N/A         | N/A    | Using bfloat16 (full quality)                  |
+| Time overrun                 | Low         | Medium | Ahead of schedule with AI assistance           |
+| Demo case fails on video     | Medium      | High   | Prepare 3 cases, use most reliable             |
+| GPU issues on 9060 XT        | Low         | Medium | Kaggle backup ready                            |
 
 ---
 
@@ -568,4 +607,4 @@ Sturgeon/
 
 ---
 
-**Ready to build. All details verified. MedGemma only.**
+**Ready to build. Architecture upgraded to agentic dual-model (Gemini + MedGemma).**

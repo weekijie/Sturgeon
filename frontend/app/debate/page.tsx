@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button, Input, Spinner } from "@heroui/react";
 import { useCase, Diagnosis } from "../context/CaseContext";
@@ -34,10 +34,15 @@ export default function DebatePage() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isOrchestrated, setIsOrchestrated] = useState(false);
 
-  // Initialize with differential from context
+  // Initialize with differential from context (run once on mount)
+  const didInit = useRef(false);
   useEffect(() => {
+    if (didInit.current) return;
     if (caseData.differential.length > 0) {
+      didInit.current = true;
       setDiagnoses(caseData.differential);
       // Add initial AI message
       setMessages([{
@@ -48,7 +53,8 @@ export default function DebatePage() {
       // No data, redirect back to upload
       router.push("/");
     }
-  }, [caseData.differential, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -68,6 +74,7 @@ export default function DebatePage() {
           current_differential: diagnoses,
           previous_rounds: caseData.debateRounds,
           user_challenge: userMessage,
+          session_id: sessionId,
         }),
       });
 
@@ -77,8 +84,22 @@ export default function DebatePage() {
 
       const data = await response.json();
 
+      // Track session and orchestration status
+      if (data.session_id) {
+        setSessionId(data.session_id);
+      }
+      setIsOrchestrated(data.orchestrated || false);
+
+      // Clean ai_response: strip any JSON wrapper artifacts
+      let aiText: string = data.ai_response || "I need more information to respond.";
+      // Remove leading { "ai_response": " prefix if present
+      const prefixMatch = aiText.match(/^\s*\{\s*"ai_response"\s*:\s*"?([\s\S]*)/);
+      if (prefixMatch) {
+        aiText = prefixMatch[1].replace(/"\s*,?\s*"(updated_differential|suggested_test|medgemma_query)[\s\S]*$/, "").replace(/["\s}]+$/, "");
+      }
+
       // Add AI response to messages
-      setMessages((prev) => [...prev, { role: "ai", content: data.ai_response }]);
+      setMessages((prev) => [...prev, { role: "ai", content: aiText }]);
       
       // Update differential if changed
       if (data.updated_differential?.length > 0) {
@@ -110,9 +131,16 @@ export default function DebatePage() {
       {/* Header - Glassmorphism */}
       <header className="sticky top-0 z-50 border-b border-white/10 bg-background/80 backdrop-blur-md px-6 py-4 shadow-sm">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <h1 className="text-xl font-bold tracking-tight">
-            <span className="text-teal drop-shadow-sm">Sturgeon</span> Diagnostic Debate
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold tracking-tight">
+              <span className="text-teal drop-shadow-sm">Sturgeon</span> Diagnostic Debate
+            </h1>
+            {isOrchestrated && (
+              <span className="text-[10px] font-medium text-teal/70 bg-teal/10 px-2 py-0.5 rounded-full border border-teal/20">
+                Agentic Mode
+              </span>
+            )}
+          </div>
           <Button 
             variant="bordered" 
             size="sm" 
@@ -141,9 +169,37 @@ export default function DebatePage() {
                   <h3 className="font-medium text-sm leading-tight group-hover:text-teal transition-colors">{dx.name}</h3>
                   <ProbabilityBadge level={dx.probability} />
                 </div>
-                <p className="text-xs text-muted leading-relaxed group-hover:text-foreground/80 transition-colors">
-                  {dx.supporting_evidence?.slice(0, 2).join(". ") || "No evidence provided"}
-                </p>
+                {/* Supporting evidence */}
+                {dx.supporting_evidence?.length > 0 && (
+                  <div className="mb-1.5">
+                    <p className="text-[10px] text-success/70 font-medium uppercase tracking-wider mb-0.5">Supporting</p>
+                    <ul className="text-xs text-muted leading-relaxed group-hover:text-foreground/80 transition-colors space-y-0.5">
+                      {dx.supporting_evidence.map((ev, i) => (
+                        <li key={i} className="flex gap-1"><span className="text-success/50 shrink-0">+</span> {ev}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* Against evidence */}
+                {dx.against_evidence?.length > 0 && (
+                  <div className="mb-1.5">
+                    <p className="text-[10px] text-danger/70 font-medium uppercase tracking-wider mb-0.5">Against</p>
+                    <ul className="text-xs text-muted leading-relaxed group-hover:text-foreground/80 transition-colors space-y-0.5">
+                      {dx.against_evidence.map((ev, i) => (
+                        <li key={i} className="flex gap-1"><span className="text-danger/50 shrink-0">-</span> {ev}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* Suggested tests */}
+                {dx.suggested_tests?.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-teal/70 font-medium uppercase tracking-wider mb-0.5">Tests</p>
+                    <p className="text-xs text-muted leading-relaxed group-hover:text-foreground/80 transition-colors">
+                      {dx.suggested_tests.join(", ")}
+                    </p>
+                  </div>
+                )}
               </Card>
             ))}
           </div>
@@ -172,7 +228,11 @@ export default function DebatePage() {
               <div className="flex justify-start">
                 <div className="bg-surface rounded-2xl px-4 py-3 flex items-center gap-2">
                   <Spinner size="sm" />
-                  <span className="text-sm text-muted">MedGemma is thinking...</span>
+                  <span className="text-sm text-muted">
+                    {isOrchestrated
+                      ? "Gemini + MedGemma are reasoning..."
+                      : "MedGemma is thinking..."}
+                  </span>
                 </div>
               </div>
             )}

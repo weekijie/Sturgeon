@@ -133,6 +133,61 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-02-07] Session 5 - Agentic Dual-Model Architecture
+
+### Architecture Upgrade
+
+Upgraded from MedGemma-only to **Gemini + MedGemma agentic dual-model**:
+- **Gemini** (orchestrator): Manages multi-turn conversation, summarizes debate state, formulates focused questions
+- **MedGemma** (callable tool): Handles all clinical reasoning, differential diagnosis, evidence analysis
+- Maps directly to the **Agentic Workflow Prize** criteria: "deploying HAI-DEF models as intelligent agents or callable tools"
+- Graceful fallback to MedGemma-only if no Gemini API key is set
+
+### Added
+
+- `ai-service/gemini_orchestrator.py` (~477 lines):
+  - `ClinicalState` dataclass for structured debate state (keeps prompt size constant)
+  - `GeminiOrchestrator` class with two-step flow: Gemini formulates question -> MedGemma answers -> Gemini synthesizes
+  - `_parse_orchestrator_response()` with double-wrap JSON detection, regex stripping, nested dict unwrapping
+  - System instruction for orchestrator role
+- `ai-service/.env.example` - Environment variable template for setup
+
+### Changed
+
+- `ai-service/main.py` - Refactored to v0.2.0:
+  - In-memory session store (`_sessions` dict) for clinical state tracking
+  - Orchestrated vs fallback debate turn routing (`_debate_turn_orchestrated` / `_debate_turn_medgemma_only`)
+  - Extracted `_parse_differential()` helper for robust field name handling (works with both MedGemma and Gemini responses)
+  - Health endpoint now reports orchestrator status, mode, active sessions
+  - `DebateTurnRequest` / `DebateTurnResponse` extended with `session_id` and `orchestrated` fields
+- `ai-service/medgemma.py` - Upgraded to MedGemma v1.5:
+  - Model ID: `google/medgemma-4b-it` -> `google/medgemma-1.5-4b-it`
+  - Better medical text reasoning, improved image support (CT, MRI, WSI), structured data extraction
+- `ai-service/requirements.txt` - Added `google-genai>=1.0.0`, `python-dotenv>=1.0.0`
+- `frontend/app/debate/page.tsx`:
+  - Fixed chat wipe bug: Changed from `[caseData.differential, router]` dependency to `useRef(false)` one-time init
+  - Added `ai_response` cleanup: regex strips `{ "ai_response":` prefix artifacts before display
+  - Added session tracking (`sessionId` state, passed to backend)
+  - Added "Agentic Mode" badge in header when orchestrator is active
+  - Loading indicator shows "Gemini + MedGemma are reasoning..." in agentic mode
+  - Redesigned differential cards: full supporting evidence (green +), against evidence (red -), suggested tests (teal)
+- `CLAUDE.md` - Updated with dual-model architecture, revised constraints and status
+- `STURGEON_PROJECT_PLAN.md` - Updated architecture diagrams, data flow, milestones, risk table
+
+### Fixed
+
+- **Double-wrapped JSON**: Gemini sometimes returned `{ "ai_response": "{ \"ai_response\": \"...\" }" }` -- detected and unwrapped
+- **Chat messages wiped**: `useEffect` re-triggered on differential update, resetting messages to initial state
+- **AI responses truncated**: Increased `max_output_tokens` from 2048 -> 4096 (Gemini synthesis), `max_new_tokens` from 1536 -> 2048 (MedGemma)
+- **Differential cards too sparse**: Only showed `.slice(0, 2)` of supporting evidence
+
+### Model Upgrades
+
+- Gemini: `gemini-2.5-flash` -> `gemini-3-flash-preview`
+- MedGemma: `google/medgemma-4b-it` (v1) -> `google/medgemma-1.5-4b-it` (v1.5)
+
+---
+
 ## Future Changes
 
 _Document all code changes below with date and description._

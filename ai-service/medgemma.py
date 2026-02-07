@@ -1,6 +1,11 @@
 """
 MedGemma model loader and inference
-Based on: https://huggingface.co/google/medgemma-4b-it
+Based on: https://huggingface.co/google/medgemma-1.5-4b-it
+
+Upgraded from v1 (google/medgemma-4b-it) to v1.5 for:
+- Better medical text reasoning accuracy
+- Improved image support (CT, MRI, whole-slide histopathology)
+- Structured data extraction from lab reports and EHR data
 """
 from transformers import AutoProcessor, AutoModelForImageTextToText
 import torch
@@ -14,7 +19,7 @@ class MedGemmaModel:
         self.processor = None
         self.device = None
     
-    def load(self, model_id: str = "google/medgemma-4b-it"):
+    def load(self, model_id: str = "google/medgemma-1.5-4b-it"):
         """Load MedGemma model with FP16 precision."""
         logger.info(f"Loading {model_id}...")
         
