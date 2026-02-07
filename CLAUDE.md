@@ -26,6 +26,8 @@
 | AI Model | MedGemma 4B-it (bfloat16, via AutoModelForImageTextToText) |
 | Hosting | Vercel (free) |
 
+> **Note**: Tailwind v4 uses `@theme` syntax which may trigger "Unknown at rule" warnings in IDEs. These are false positives.
+
 **No Gemini. No fallbacks. MedGemma only.**
 
 ### Brand Identity

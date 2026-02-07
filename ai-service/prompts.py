@@ -86,14 +86,23 @@ Respond by:
 3. Providing an updated differential if warranted
 4. Suggesting a test if it would help clarify
 
-Be conversational but precise. Return as JSON:
+Be conversational but precise. Return as JSON with this EXACT format:
 {{
-  "ai_response": "Your conversational response",
-  "updated_differential": [same format as differential],
-  "suggested_test": "optional test name"
+  "ai_response": "Your conversational response to the challenge",
+  "updated_differential": [
+    {{
+      "name": "Diagnosis Name",
+      "probability": "high|medium|low",
+      "supporting_evidence": ["evidence 1", "evidence 2"],
+      "against_evidence": ["counter 1"],
+      "suggested_tests": ["test 1"]
+    }}
+  ],
+  "suggested_test": "optional test name or null"
 }}
 
 JSON Response:"""
+
 
 SUMMARY_PROMPT = """Generate a final diagnosis summary based on the case discussion.
 

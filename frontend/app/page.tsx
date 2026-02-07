@@ -1,13 +1,19 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Card, Button, Spinner } from "@heroui/react";
+import { useCase } from "./context/CaseContext";
 
 export default function UploadPage() {
+  const router = useRouter();
+  const { setPatientHistory, setDifferential } = useCase();
+  
   const [file, setFile] = useState<File | null>(null);
-  const [patientHistory, setPatientHistory] = useState("");
+  const [patientHistory, setPatientHistoryLocal] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -39,10 +45,37 @@ export default function UploadPage() {
     if (!file && !patientHistory.trim()) return;
 
     setIsAnalyzing(true);
-    // TODO: Connect to backend API
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setIsAnalyzing(false);
-    // Navigate to debate page (will wire up later)
+    setError(null);
+
+    try {
+      // For now, we'll use the patient history text directly
+      // File processing can be added later
+      const response = await fetch("/api/differential", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patient_history: patientHistory,
+          lab_values: {}, // Can be extracted from file in future
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to analyze. Please try again.");
+      }
+
+      const data = await response.json();
+      
+      // Store in context
+      setPatientHistory(patientHistory);
+      setDifferential(data.diagnoses);
+      
+      // Navigate to debate page
+      router.push("/debate");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -116,17 +149,24 @@ export default function UploadPage() {
             {/* Patient History - using native textarea */}
             <div className="space-y-2">
               <label htmlFor="patient-history" className="text-sm font-medium">
-                Patient History (Optional)
+                Patient History (Required)
               </label>
               <textarea
                 id="patient-history"
                 placeholder="Enter relevant patient history, symptoms, medications, previous diagnoses..."
                 rows={4}
                 value={patientHistory}
-                onChange={(e) => setPatientHistory(e.target.value)}
+                onChange={(e) => setPatientHistoryLocal(e.target.value)}
                 className="w-full rounded-lg bg-surface border border-border px-4 py-3 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent resize-none"
               />
             </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="text-danger text-sm bg-danger/10 p-3 rounded-lg">
+                {error}
+              </div>
+            )}
           </div>
 
           {/* Card Footer */}
@@ -134,16 +174,16 @@ export default function UploadPage() {
             <Button
               variant="solid"
               onPress={handleAnalyze}
-              isDisabled={!file && !patientHistory.trim()}
+              isDisabled={(!file && !patientHistory.trim()) || isAnalyzing}
               className={`
                 min-w-[200px] transition-all duration-300 font-semibold
-                ${isAnalyzing ? "animate-pulse" : "shadow-lg shadow-accent/20 hover:shadow-accent/40 hover:scale-[1.02]"}
+                ${isAnalyzing ? "animate-pulse" : "shadow-lg shadow-accent-soft hover:shadow-accent-soft hover:scale-[1.02]"}
               `}
             >
               {isAnalyzing ? (
                 <>
                   <Spinner size="sm" color="white" />
-                  Analyzing...
+                  Analyzing with MedGemma...
                 </>
               ) : (
                 "Analyze & Begin Debate"

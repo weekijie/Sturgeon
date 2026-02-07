@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import "./globals.css";
+import { CaseProvider } from "./context/CaseContext";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -25,9 +26,12 @@ export default function RootLayout({
           <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-teal/10 blur-[100px]" />
           <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] rounded-full bg-accent/10 blur-[100px]" />
         </div>
-        {children}
+        <CaseProvider>
+          {children}
+        </CaseProvider>
       </body>
     </html>
   );
 }
+
 

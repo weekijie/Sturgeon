@@ -232,15 +232,26 @@ async def debate_turn(request: DebateTurnRequest):
     response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
     data = extract_json(response)
     
+    # Parse updated differential with robust field name handling
     diagnoses = []
-    for dx in data.get("updated_differential", []):
-        diagnoses.append(Diagnosis(
-            name=dx.get("name", "Unknown"),
-            probability=dx.get("probability", "medium"),
-            supporting_evidence=dx.get("supporting_evidence", []),
-            against_evidence=dx.get("against_evidence", []),
-            suggested_tests=dx.get("suggested_tests", [])
-        ))
+    updated_diff = data.get("updated_differential", [])
+    
+    for dx in updated_diff:
+        if isinstance(dx, dict):
+            # Handle various field name variations from MedGemma
+            name = dx.get("name") or dx.get("diagnosis") or dx.get("diagnosis_name") or "Unknown"
+            prob = dx.get("probability") or dx.get("likelihood") or "medium"
+            support = dx.get("supporting_evidence") or dx.get("supporting") or dx.get("evidence_for") or []
+            against = dx.get("against_evidence") or dx.get("against") or dx.get("evidence_against") or []
+            tests = dx.get("suggested_tests") or dx.get("tests") or dx.get("workup") or []
+            
+            diagnoses.append(Diagnosis(
+                name=name,
+                probability=prob if prob in ["high", "medium", "low"] else "medium",
+                supporting_evidence=support if isinstance(support, list) else [support],
+                against_evidence=against if isinstance(against, list) else [against],
+                suggested_tests=tests if isinstance(tests, list) else [tests]
+            ))
     
     return DebateTurnResponse(
         ai_response=data.get("ai_response", "I need more information to respond."),
@@ -269,11 +280,23 @@ async def generate_summary(request: SummaryRequest):
     response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
     data = extract_json(response)
     
+    # Handle ruled_out which may be list of strings or list of dicts
+    ruled_out_raw = data.get("ruled_out", [])
+    ruled_out = []
+    for item in ruled_out_raw:
+        if isinstance(item, str):
+            ruled_out.append(item)
+        elif isinstance(item, dict):
+            # Extract diagnosis name from dict format
+            ruled_out.append(item.get("diagnosis", item.get("name", str(item))))
+        else:
+            ruled_out.append(str(item))
+    
     return SummaryResponse(
         final_diagnosis=data.get("final_diagnosis", "Unable to determine"),
         confidence=data.get("confidence", "low"),
         reasoning_chain=data.get("reasoning_chain", []),
-        ruled_out=data.get("ruled_out", []),
+        ruled_out=ruled_out,
         next_steps=data.get("next_steps", [])
     )
 
