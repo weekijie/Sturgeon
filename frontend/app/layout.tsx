@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
-import { Outfit } from "next/font/google";
+import { Source_Sans_3, Source_Code_Pro } from "next/font/google";
 import "./globals.css";
 import { CaseProvider } from "./context/CaseContext";
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+const sourceSans = Source_Sans_3({
+  variable: "--font-sans",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+});
+
+const sourceCode = Source_Code_Pro({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -19,13 +26,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" data-theme="dark" suppressHydrationWarning>
-      <body className={`${outfit.variable} font-sans bg-background text-foreground antialiased selection:bg-teal/30 relative`}>
-        {/* Ambient Glow Background */}
-        <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
-          <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-teal/10 blur-[100px]" />
-          <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] rounded-full bg-accent/10 blur-[100px]" />
-        </div>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${sourceSans.variable} ${sourceCode.variable} font-sans bg-background text-foreground antialiased selection:bg-teal-light`}>
+        {/* Teal top bar (NIH-style) */}
+        <div className="h-[3px] bg-teal w-full fixed top-0 z-[100]" />
         <CaseProvider>
           {children}
         </CaseProvider>
@@ -33,5 +37,3 @@ export default function RootLayout({
     </html>
   );
 }
-
-

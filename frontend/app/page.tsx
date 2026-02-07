@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button, Spinner, Chip } from "@heroui/react";
 import { useCase, ImageAnalysis } from "./context/CaseContext";
+import Prose from "../components/Prose";
 
 // Helper: is the file an image?
 function isImageFile(file: File): boolean {
@@ -27,16 +28,20 @@ function ExpandableText({ text, previewLength = 400 }: { text: string; previewLe
 
   return (
     <div>
-      <div className={`text-sm leading-relaxed whitespace-pre-wrap ${!expanded && needsExpansion ? "max-h-48 overflow-hidden relative" : ""}`}>
-        {expanded || !needsExpansion ? text : text.slice(0, previewLength) + "..."}
-        {!expanded && needsExpansion && (
-          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-surface/90 to-transparent" />
+      <div className={`text-sm leading-relaxed ${!expanded && needsExpansion ? "max-h-48 overflow-hidden relative" : ""}`}>
+        {expanded || !needsExpansion ? (
+          <Prose content={text} />
+        ) : (
+          <>
+            <Prose content={text.slice(0, previewLength) + "..."} />
+            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent" />
+          </>
         )}
       </div>
       {needsExpansion && (
         <button
           onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-          className="text-xs text-teal hover:text-teal/80 mt-1 font-medium transition-colors"
+          className="text-xs text-teal hover:text-teal/80 mt-2 font-semibold px-3 py-1 rounded-full bg-teal-light/50 hover:bg-teal-light transition-colors"
         >
           {expanded ? "Show less" : "Read more"}
         </button>
@@ -195,11 +200,11 @@ export default function UploadPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6">
+    <main className="min-h-screen flex items-center justify-center p-6 pt-8">
       <div className="w-full max-w-2xl space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">
+          <h1 className="text-4xl font-bold tracking-tight text-foreground">
             <span className="text-teal">Sturgeon</span>
           </h1>
           <p className="text-muted text-lg">
@@ -208,10 +213,10 @@ export default function UploadPage() {
         </div>
 
         {/* Upload Card */}
-        <Card className="p-0">
+        <Card className="p-0 bg-white border border-border shadow-sm">
           {/* Card Header */}
           <div className="p-6 pb-0">
-            <h2 className="text-xl font-semibold">Upload Evidence</h2>
+            <h2 className="text-xl font-semibold text-foreground">Upload Evidence</h2>
             <p className="text-muted text-sm mt-1">
               Upload medical images (X-ray, dermatology, pathology) or provide
               patient history
@@ -230,17 +235,17 @@ export default function UploadPage() {
                 transition-all duration-200 cursor-pointer
                 ${
                   isDragging
-                    ? "border-accent bg-accent/10"
-                    : "border-border hover:border-accent/50 hover:bg-surface/50"
+                    ? "border-teal bg-teal-light/30"
+                    : "border-border hover:border-teal/50 hover:bg-surface"
                 }
-                ${file ? "border-success bg-success/10" : ""}
+                ${file ? "border-success bg-green-50" : ""}
               `}
             >
               <input
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.txt"
                 onChange={handleFileSelect}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
               />
 
               {file ? (
@@ -256,8 +261,8 @@ export default function UploadPage() {
                     </div>
                   )}
                   <div className="flex items-center justify-center gap-2">
-                    <div className="text-success text-lg">✓</div>
-                    <p className="font-medium">{file.name}</p>
+                    <div className="text-success text-lg">&#10003;</div>
+                    <p className="font-medium text-foreground">{file.name}</p>
                     <Chip size="sm" variant="flat">
                       {(file.size / 1024).toFixed(1)} KB
                     </Chip>
@@ -272,15 +277,20 @@ export default function UploadPage() {
                       e.stopPropagation();
                       clearFile();
                     }}
-                    className="text-sm text-muted hover:text-danger transition-colors"
+                    className="relative z-20 text-sm text-muted hover:text-danger transition-colors"
                   >
                     Remove file
                   </button>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="text-4xl opacity-50">🏥</div>
-                  <p className="font-medium">
+                  {/* Clean SVG upload icon */}
+                  <div className="flex justify-center">
+                    <svg className="w-12 h-12 text-muted/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                  </div>
+                  <p className="font-medium text-foreground">
                     Drop medical image or report here
                   </p>
                   <p className="text-sm text-muted">
@@ -291,25 +301,15 @@ export default function UploadPage() {
               )}
             </div>
 
-            {/* Image Analysis Results (shown after analysis, before navigating) */}
+            {/* Image Analysis Results */}
             {imageResult && (
-              <div className="rounded-xl border border-border bg-surface/50 p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-sm">Image Analysis</h3>
-                  <Chip size="sm" color="secondary" variant="flat">
-                    {imageResult.modality}
-                  </Chip>
-                  <Chip size="sm" variant="flat">
-                    {(imageResult.image_type_confidence * 100).toFixed(0)}%
-                    confident
-                  </Chip>
-                </div>
-
-                {/* Triage findings */}
+              <div className="rounded-xl border border-border bg-white p-4 space-y-3 border-l-4 border-l-teal">
+                {/* Section: MedSigLIP Triage */}
                 {imageResult.triage_findings.length > 0 && (
                   <div>
-                    <p className="text-xs text-muted mb-1">MedSigLIP Triage:</p>
-                    <div className="flex flex-wrap gap-1">
+                    <h3 className="font-semibold text-sm text-foreground mb-2">Image Analysis</h3>
+                    <p className="text-xs text-muted mb-1.5">MedSigLIP Triage Findings:</p>
+                    <div className="flex flex-wrap gap-1.5">
                       {imageResult.triage_findings.slice(0, 5).map((f, i) => (
                         <Chip
                           key={i}
@@ -324,11 +324,14 @@ export default function UploadPage() {
                   </div>
                 )}
 
-                {/* MedGemma interpretation */}
+                {/* Divider */}
+                {imageResult.triage_findings.length > 0 && (
+                  <div className="border-t border-border" />
+                )}
+
+                {/* Section: Clinical Interpretation */}
                 <div>
-                  <p className="text-xs text-muted mb-1">
-                    MedGemma Interpretation:
-                  </p>
+                  <h3 className="font-semibold text-sm text-foreground mb-2">Clinical Interpretation</h3>
                   <ExpandableText text={imageResult.medgemma_analysis} />
                 </div>
               </div>
@@ -336,7 +339,7 @@ export default function UploadPage() {
 
             {/* Patient History */}
             <div className="space-y-2">
-              <label htmlFor="patient-history" className="text-sm font-medium">
+              <label htmlFor="patient-history" className="text-sm font-medium text-foreground">
                 Patient History{" "}
                 {file && isImageFile(file)
                   ? "(Optional — enhances analysis)"
@@ -348,38 +351,38 @@ export default function UploadPage() {
                 rows={4}
                 value={patientHistory}
                 onChange={(e) => setPatientHistoryLocal(e.target.value)}
-                className="w-full rounded-lg bg-surface border border-border px-4 py-3 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent resize-none"
+                className="w-full rounded-lg bg-white border border-border px-4 py-3 text-sm text-foreground placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-teal/40 focus:border-teal resize-none transition-colors"
               />
             </div>
 
             {/* Error Message */}
             {error && (
-              <div className="text-danger text-sm bg-danger/10 p-3 rounded-lg">
+              <div className="text-danger text-sm bg-red-50 border border-red-200 p-3 rounded-lg">
                 {error}
               </div>
             )}
           </div>
 
           {/* Card Footer */}
-          <div className="p-6 pt-0 flex justify-end">
+          <div className="p-6 pt-0 flex flex-col items-end gap-2">
             <Button
               variant="solid"
               onPress={handleAnalyze}
               isDisabled={(!file && !patientHistory.trim()) || isAnalyzing}
-              className={`
-                min-w-[200px] transition-all duration-300 font-semibold
-                ${isAnalyzing ? "animate-pulse" : "shadow-lg shadow-accent-soft hover:shadow-accent-soft hover:scale-[1.02]"}
-              `}
+              className="min-w-[200px] font-semibold bg-teal text-white hover:bg-teal/90 rounded-lg px-6 py-2.5 text-sm transition-colors"
             >
               {isAnalyzing ? (
                 <>
                   <Spinner size="sm" color="white" />
-                  {analysisStep || "Analyzing..."}
+                  Analyzing...
                 </>
               ) : (
                 "Analyze & Begin Debate"
               )}
             </Button>
+            {isAnalyzing && analysisStep && (
+              <p className="text-xs text-muted">{analysisStep}</p>
+            )}
           </div>
         </Card>
 

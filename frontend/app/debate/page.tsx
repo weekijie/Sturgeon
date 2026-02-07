@@ -2,16 +2,17 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Card, Button, Input, Spinner } from "@heroui/react";
+import { Card, Button, Input } from "@heroui/react";
 import { useCase, Diagnosis } from "../context/CaseContext";
+import Prose from "../../components/Prose";
 
 type Probability = "high" | "medium" | "low";
 
 function ProbabilityBadge({ level }: { level: Probability }) {
   const colorClasses = {
-    high: "bg-success/20 text-success",
-    medium: "bg-warning/20 text-warning",
-    low: "bg-danger/20 text-danger",
+    high: "bg-green-100 text-green-700 border border-green-200",
+    medium: "bg-amber-100 text-amber-700 border border-amber-200",
+    low: "bg-red-100 text-red-700 border border-red-200",
   };
 
   return (
@@ -22,7 +23,7 @@ function ProbabilityBadge({ level }: { level: Probability }) {
 }
 
 interface Message {
-  role: "user" | "ai";
+  role: "user" | "ai" | "error";
   content: string;
 }
 
@@ -36,6 +37,12 @@ export default function DebatePage() {
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isOrchestrated, setIsOrchestrated] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
 
   // Initialize with differential from context (run once on mount)
   const didInit = useRef(false);
@@ -87,7 +94,15 @@ export default function DebatePage() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to get AI response");
+        // Try to read actual error details from response body
+        let errorDetail = "Failed to get AI response";
+        try {
+          const errBody = await response.json();
+          errorDetail = errBody.detail || errBody.error || errBody.message || errorDetail;
+        } catch {
+          // Response body wasn't JSON
+        }
+        throw new Error(errorDetail);
       }
 
       const data = await response.json();
@@ -121,12 +136,22 @@ export default function DebatePage() {
         ai_response: data.ai_response,
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
       setMessages((prev) => [...prev, { 
-        role: "ai", 
-        content: "I apologize, but I encountered an error processing your challenge. Please try again." 
+        role: "error", 
+        content: errorMessage,
       }]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRetry = () => {
+    // Remove the last error message and retry with the last user message
+    const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+    if (lastUserMsg) {
+      setMessages((prev) => prev.filter((_, i) => i !== prev.length - 1)); // remove error
+      setInput(lastUserMsg.content);
     }
   };
 
@@ -135,16 +160,16 @@ export default function DebatePage() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col bg-background selection:bg-teal/30">
-      {/* Header - Glassmorphism */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-background/80 backdrop-blur-md px-6 py-4 shadow-sm">
+    <main className="min-h-screen flex flex-col bg-white">
+      {/* Header */}
+      <header className="sticky top-[3px] z-50 border-b border-border bg-white px-6 py-4 shadow-sm">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight">
-              <span className="text-teal drop-shadow-sm">Sturgeon</span> Diagnostic Debate
+            <h1 className="text-xl font-bold tracking-tight text-foreground">
+              <span className="text-teal">Sturgeon</span> Diagnostic Debate
             </h1>
             {isOrchestrated && (
-              <span className="text-[10px] font-medium text-teal/70 bg-teal/10 px-2 py-0.5 rounded-full border border-teal/20">
+              <span className="text-[10px] font-medium text-teal bg-teal-light px-2 py-0.5 rounded-full border border-teal/20">
                 Agentic Mode
               </span>
             )}
@@ -153,7 +178,7 @@ export default function DebatePage() {
             variant="bordered" 
             size="sm" 
             onPress={handleEndSession}
-            className="hover:border-success hover:text-success hover:bg-success/10 transition-colors"
+            className="border-border text-foreground hover:border-teal hover:text-teal hover:bg-teal-light/30 transition-colors"
           >
             End Session & Summarize
           </Button>
@@ -163,14 +188,14 @@ export default function DebatePage() {
       {/* Main Content - Split Layout */}
       <div className="flex-1 flex max-w-7xl mx-auto w-full">
         {/* Left Panel - Differential Diagnoses */}
-        <aside className="w-80 border-r border-border p-4 overflow-y-auto h-[calc(100vh-73px)] sticky top-[73px]">
+        <aside className="w-80 border-r border-border bg-surface p-4 overflow-y-auto h-[calc(100vh-52px-3px)] sticky top-[calc(52px+3px)]">
           {/* Uploaded Image Preview */}
           {caseData.imagePreviewUrl && (
             <div className="mb-4">
               <h2 className="text-xs font-bold text-muted uppercase tracking-widest mb-2 px-1">
                 Medical Image
               </h2>
-              <div className="rounded-lg border border-border overflow-hidden">
+              <div className="rounded-lg border border-border overflow-hidden bg-white">
                 <img
                   src={caseData.imagePreviewUrl}
                   alt="Uploaded medical image"
@@ -179,7 +204,7 @@ export default function DebatePage() {
               </div>
               {caseData.imageAnalysis && (
                 <div className="mt-2 px-1">
-                  <p className="text-[10px] text-teal/70 font-medium uppercase tracking-wider">
+                  <p className="text-[10px] text-teal font-medium uppercase tracking-wider">
                     {caseData.imageAnalysis.image_type}
                   </p>
                   <p className="text-[10px] text-muted">
@@ -197,19 +222,19 @@ export default function DebatePage() {
             {diagnoses.map((dx, idx) => (
               <Card
                 key={idx}
-                className="p-3 transition-all duration-300 hover:border-teal/50 hover:shadow-lg hover:shadow-teal/5 hover:-translate-y-0.5 cursor-default group"
+                className={`p-3 bg-white border border-border shadow-sm cursor-default ${idx === 0 ? "border-l-4 border-l-teal" : ""}`}
               >
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <h3 className="font-medium text-sm leading-tight group-hover:text-teal transition-colors">{dx.name}</h3>
+                  <h3 className="font-medium text-sm leading-tight text-foreground">{dx.name}</h3>
                   <ProbabilityBadge level={dx.probability} />
                 </div>
                 {/* Supporting evidence */}
                 {dx.supporting_evidence?.length > 0 && (
                   <div className="mb-1.5">
-                    <p className="text-[10px] text-success/70 font-medium uppercase tracking-wider mb-0.5">Supporting</p>
-                    <ul className="text-xs text-muted leading-relaxed group-hover:text-foreground/80 transition-colors space-y-0.5">
+                    <p className="text-[10px] text-success font-medium uppercase tracking-wider mb-0.5">Supporting</p>
+                    <ul className="text-xs text-muted leading-relaxed space-y-0.5">
                       {dx.supporting_evidence.map((ev, i) => (
-                        <li key={i} className="flex gap-1"><span className="text-success/50 shrink-0">+</span> {ev}</li>
+                        <li key={i} className="flex gap-1"><span className="text-success shrink-0">+</span> {ev}</li>
                       ))}
                     </ul>
                   </div>
@@ -217,10 +242,10 @@ export default function DebatePage() {
                 {/* Against evidence */}
                 {dx.against_evidence?.length > 0 && (
                   <div className="mb-1.5">
-                    <p className="text-[10px] text-danger/70 font-medium uppercase tracking-wider mb-0.5">Against</p>
-                    <ul className="text-xs text-muted leading-relaxed group-hover:text-foreground/80 transition-colors space-y-0.5">
+                    <p className="text-[10px] text-danger font-medium uppercase tracking-wider mb-0.5">Against</p>
+                    <ul className="text-xs text-muted leading-relaxed space-y-0.5">
                       {dx.against_evidence.map((ev, i) => (
-                        <li key={i} className="flex gap-1"><span className="text-danger/50 shrink-0">-</span> {ev}</li>
+                        <li key={i} className="flex gap-1"><span className="text-danger shrink-0">-</span> {ev}</li>
                       ))}
                     </ul>
                   </div>
@@ -228,8 +253,8 @@ export default function DebatePage() {
                 {/* Suggested tests */}
                 {dx.suggested_tests?.length > 0 && (
                   <div>
-                    <p className="text-[10px] text-teal/70 font-medium uppercase tracking-wider mb-0.5">Tests</p>
-                    <p className="text-xs text-muted leading-relaxed group-hover:text-foreground/80 transition-colors">
+                    <p className="text-[10px] text-teal font-medium uppercase tracking-wider mb-0.5">Tests</p>
+                    <p className="text-xs text-muted leading-relaxed">
                       {dx.suggested_tests.join(", ")}
                     </p>
                   </div>
@@ -248,32 +273,65 @@ export default function DebatePage() {
                 key={idx}
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div
-                  className={`max-w-[70%] rounded-2xl px-4 py-3 ${msg.role === "user"
-                    ? "bg-accent text-accent-foreground"
-                    : "bg-surface text-foreground"
-                  }`}
-                >
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
+                <div className="max-w-[70%]">
+                  {/* Label */}
+                  <p className={`text-[10px] font-medium uppercase tracking-wider mb-1 ${
+                    msg.role === "user" ? "text-right text-muted" : msg.role === "error" ? "text-danger" : "text-teal"
+                  }`}>
+                    {msg.role === "user" ? "You" : msg.role === "error" ? "Error" : "Sturgeon AI"}
+                  </p>
+
+                  {msg.role === "error" ? (
+                    /* Error message */
+                    <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                      <p className="text-sm text-danger leading-relaxed">{msg.content}</p>
+                      <button
+                        onClick={handleRetry}
+                        className="mt-2 text-xs font-semibold text-teal hover:text-teal/80 px-3 py-1 rounded-full bg-teal-light/50 hover:bg-teal-light transition-colors"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : msg.role === "user" ? (
+                    /* User message */
+                    <div className="bg-accent text-white rounded-xl px-4 py-3">
+                      <p className="text-sm leading-relaxed break-words">{msg.content}</p>
+                    </div>
+                  ) : (
+                    /* AI message */
+                    <div className="bg-surface border-l-3 border-l-teal rounded-xl px-4 py-3">
+                      <Prose content={msg.content} />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
             {isLoading && (
               <div className="flex justify-start">
-                <div className="bg-surface rounded-2xl px-4 py-3 flex items-center gap-2">
-                  <Spinner size="sm" />
-                  <span className="text-sm text-muted">
-                    {isOrchestrated
-                      ? "Gemini + MedGemma are reasoning..."
-                      : "MedGemma is thinking..."}
-                  </span>
+                <div className="max-w-[70%]">
+                  <p className="text-[10px] font-medium uppercase tracking-wider mb-1 text-teal">
+                    Sturgeon AI
+                  </p>
+                  <div className="bg-surface border-l-3 border-l-teal rounded-xl px-4 py-3 flex items-center gap-3">
+                    <div className="dot-pulse">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                    <span className="text-sm text-muted">
+                      {isOrchestrated
+                        ? "Gemini + MedGemma are reasoning..."
+                        : "MedGemma is thinking..."}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Input */}
-          <div className="border-t border-border p-4">
+          <div className="border-t border-border p-4 bg-white">
             <div className="flex gap-3 max-w-4xl mx-auto">
               <Input
                 className="flex-1"
@@ -283,8 +341,13 @@ export default function DebatePage() {
                 onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && handleSend()}
                 isDisabled={isLoading}
               />
-              <Button variant="solid" onPress={handleSend} isDisabled={isLoading || !input.trim()}>
-                Send
+              <Button 
+                variant="solid" 
+                onPress={handleSend} 
+                isDisabled={isLoading || !input.trim()}
+                className="bg-teal text-white hover:bg-teal/90 font-semibold px-6"
+              >
+                Send &rarr;
               </Button>
             </div>
           </div>

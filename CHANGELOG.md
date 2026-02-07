@@ -228,6 +228,56 @@ Upgraded from MedGemma-only to **Gemini + MedGemma agentic dual-model**:
 
 ---
 
+## [2026-02-08] Sessions 8-9 — Light Theme Overhaul & Visual QA
+
+### Theme Redesign: Dark → Light (PubMed/NIH-inspired)
+
+Complete visual overhaul from dark glassmorphism to a clean, clinical light theme.
+
+- **Design language**: White backgrounds, Slate 900 text (#0F172A), Teal 600 accents (#0D9488), Slate 50 surfaces (#F8FAFC), Slate 200 borders (#E2E8F0)
+- **Typography**: Swapped Outfit → Source Sans 3 + Source Code Pro (Google Fonts)
+- **Branding**: 3px teal top bar (NIH-style), no more glassmorphism/backdrop-blur
+
+### Added
+
+- `frontend/components/Prose.tsx` — Shared markdown renderer using `react-markdown` + `remark-gfm`, applies `.prose-medical` CSS class. Used in chat bubbles, image interpretation, and summary page.
+- `frontend/app/globals.css` — `.prose-medical` CSS class (teal list markers, styled headings, tables, code blocks, blockquotes). `.dot-pulse` three-dot loading animation.
+- `react-markdown` and `remark-gfm` npm dependencies
+
+### Changed
+
+- `frontend/app/layout.tsx` — Source Sans 3 font, removed `dark` class and data-theme, removed ambient glow divs, added fixed teal top bar
+- `frontend/app/globals.css` — Complete rewrite for light theme CSS variables and utility classes
+- `frontend/app/page.tsx` (Upload page):
+  - Light theme restyle with SVG upload icon
+  - White card with subtle border, teal-accented image analysis card (`border-l-4 border-l-teal`)
+  - Pill-style Read More/Show Less toggle, teal focus rings on textarea
+  - Removed misleading "Image Classification" section (37% confidence, misclassifying X-rays as lab reports) — kept only MedSigLIP Triage Findings + Clinical Interpretation
+  - Fixed analyze button loading: removed `animate-pulse`, short "Analyzing..." button text, detailed step text moved below as muted text
+  - Fixed "Remove file" button opening file explorer (z-index conflict with hidden file input)
+- `frontend/app/debate/page.tsx` (Debate page):
+  - White header, `bg-surface` sidebar, teal left border on top diagnosis card
+  - AI bubbles: `bg-surface` + teal left border + "STURGEON AI" label + `<Prose>` markdown
+  - User bubbles: blue bg + white text + "YOU" label
+  - Error bubbles: `bg-red-50` + red border + Retry button
+  - Three-dot pulse loading animation, auto-scroll to latest message
+  - Better error extraction from response body
+- `frontend/app/summary/page.tsx` (Summary page):
+  - Teal confidence progress bar, numbered reasoning steps with teal circle numbers
+  - `parseRuledOut()` function to extract real reasons from "Diagnosis: reason" strings
+  - Flat ruled-out cards with red X (replaced Accordion)
+  - Prose rendering for next steps
+  - Stripped duplicate leading numbers from reasoning steps (teal circles already show the number)
+- `ai-service/main.py` — Wrapped `_debate_turn_medgemma_only()` in try/except for graceful error responses instead of HTTP 500
+
+### Visual QA
+
+- ✅ Upload page: teal top bar, font, header, SVG icon, drop zone, file states, image preview, chips, textarea, button, footer
+- ✅ Debate page: white header, sidebar, diagnosis cards, AI/user bubbles, loading animation, send button, agentic mode badge
+- ✅ Summary page: header, diagnosis card, confidence bar, reasoning steps, next steps, ruled out cards, session footer
+
+---
+
 ## Future Changes
 
 _Document all code changes below with date and description._

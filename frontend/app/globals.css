@@ -1,50 +1,226 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 
-/* Sturgeon Medical Theme - Dark Mode */
-.dark,
-[data-theme="dark"] {
+/* Sturgeon Medical Theme - Light Mode (PubMed/NIH-inspired) */
+:root {
   /* Base Colors */
-  --background: oklch(0.13 0.02 250);
-  /* #0F172A Slate Gray */
-  --foreground: oklch(0.96 0.01 250);
-  /* #F1F5F9 Off-white */
+  --background: #FFFFFF;
+  --foreground: #0F172A; /* Slate 900 */
 
-  /* Accent - Deep Medical Blue */
-  --accent: oklch(0.45 0.2 250);
-  /* #1E40AF */
-  --accent-foreground: oklch(0.98 0 0);
+  /* Muted / Secondary Text */
+  --muted: #64748B; /* Slate 500 */
 
-  /* Status Colors */
-  --success: oklch(0.65 0.2 145);
-  /* #22C55E Green */
-  --success-foreground: oklch(0.15 0 0);
-  --warning: oklch(0.75 0.18 70);
-  /* #F59E0B Amber */
-  --warning-foreground: oklch(0.15 0 0);
-  --danger: oklch(0.6 0.22 25);
-  /* #EF4444 Red */
-  --danger-foreground: oklch(0.98 0 0);
-
-  /* Surface Colors */
-  --surface: oklch(0.18 0.02 250);
-  /* #1E293B Card Background */
+  /* Surface - Cards, panels */
+  --surface: #F8FAFC; /* Slate 50 */
   --surface-foreground: var(--foreground);
 
-  /* Teal Secondary Accent */
-  --secondary: oklch(0.55 0.15 175);
-  /* #0D9488 Teal */
-  --secondary-foreground: oklch(0.98 0 0);
+  /* Borders */
+  --border: #E2E8F0; /* Slate 200 */
+
+  /* Teal Primary Accent */
+  --teal: #0D9488; /* Teal 600 */
+  --teal-light: #CCFBF1; /* Teal 100 */
+  --secondary: #0D9488;
+  --secondary-foreground: #FFFFFF;
+
+  /* Accent - User chat bubbles */
+  --accent: #1E40AF; /* Blue 800 */
+  --accent-foreground: #FFFFFF;
+
+  /* Status Colors */
+  --success: #16A34A; /* Green 600 */
+  --success-foreground: #FFFFFF;
+  --warning: #D97706; /* Amber 600 */
+  --warning-foreground: #FFFFFF;
+  --danger: #DC2626; /* Red 600 */
+  --danger-foreground: #FFFFFF;
 }
 
+/* Tailwind v4 theme mapping */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-outfit);
-  --font-mono: var(--font-geist-mono);
+  --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-teal: var(--teal);
+  --color-teal-light: var(--teal-light);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
-/* Custom utility for teal accent */
-@theme inline {
-  --color-teal: oklch(0.55 0.15 175);
+/* Prose Medical - Markdown content styling */
+.prose-medical {
+  color: var(--foreground);
+  line-height: 1.7;
+  font-size: 0.875rem;
 }
+
+.prose-medical h1,
+.prose-medical h2,
+.prose-medical h3,
+.prose-medical h4 {
+  color: var(--foreground);
+  font-weight: 600;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+
+.prose-medical h1 {
+  font-size: 1.25rem;
+  border-bottom: 2px solid var(--teal);
+  padding-bottom: 0.25em;
+}
+
+.prose-medical h2 {
+  font-size: 1.1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.2em;
+}
+
+.prose-medical h3 {
+  font-size: 1rem;
+  color: var(--teal);
+}
+
+.prose-medical h4 {
+  font-size: 0.875rem;
+  color: var(--teal);
+}
+
+.prose-medical p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.prose-medical strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.prose-medical em {
+  font-style: italic;
+}
+
+.prose-medical ul,
+.prose-medical ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 1.5em;
+}
+
+.prose-medical ul {
+  list-style-type: disc;
+}
+
+.prose-medical ol {
+  list-style-type: decimal;
+}
+
+.prose-medical li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose-medical li::marker {
+  color: var(--teal);
+}
+
+.prose-medical code {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.15em 0.35em;
+}
+
+.prose-medical pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.prose-medical pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.prose-medical table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  font-size: 0.8125rem;
+}
+
+.prose-medical th {
+  background: var(--surface);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.5em 0.75em;
+  border-bottom: 2px solid var(--border);
+}
+
+.prose-medical td {
+  padding: 0.4em 0.75em;
+  border-bottom: 1px solid var(--border);
+}
+
+.prose-medical blockquote {
+  border-left: 3px solid var(--teal);
+  padding-left: 1em;
+  margin: 0.75em 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.prose-medical a {
+  color: var(--teal);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-medical a:hover {
+  color: var(--accent);
+}
+
+/* First element in prose shouldn't have top margin */
+.prose-medical > *:first-child {
+  margin-top: 0;
+}
+
+/* Last element in prose shouldn't have bottom margin */
+.prose-medical > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Three-dot pulse loading animation */
+@keyframes dot-pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+.dot-pulse span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--teal);
+  animation: dot-pulse 1.4s infinite ease-in-out;
+}
+
+.dot-pulse span:nth-child(1) { animation-delay: 0s; }
+.dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+.dot-pulse span:nth-child(3) { animation-delay: 0.4s; }

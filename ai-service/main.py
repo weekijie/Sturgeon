@@ -489,31 +489,41 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
 
 async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnResponse:
     """Fallback: MedGemma-only debate turn (original implementation)."""
-    model = get_model()
-    formatted_labs = format_lab_values(request.lab_values)
-    formatted_diff = format_differential([d.model_dump() for d in request.current_differential])
-    formatted_rounds = format_rounds(request.previous_rounds)
-    
-    prompt = DEBATE_TURN_PROMPT.format(
-        patient_history=request.patient_history,
-        formatted_lab_values=formatted_labs,
-        current_differential=formatted_diff,
-        previous_rounds=formatted_rounds,
-        user_challenge=request.user_challenge
-    )
-    
-    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
-    data = extract_json(response)
-    
-    # Parse updated differential with robust field name handling
-    diagnoses = _parse_differential(data.get("updated_differential", []))
-    
-    return DebateTurnResponse(
-        ai_response=data.get("ai_response", "I need more information to respond."),
-        updated_differential=diagnoses if diagnoses else request.current_differential,
-        suggested_test=data.get("suggested_test"),
-        orchestrated=False,
-    )
+    try:
+        model = get_model()
+        formatted_labs = format_lab_values(request.lab_values)
+        formatted_diff = format_differential([d.model_dump() for d in request.current_differential])
+        formatted_rounds = format_rounds(request.previous_rounds)
+        
+        prompt = DEBATE_TURN_PROMPT.format(
+            patient_history=request.patient_history,
+            formatted_lab_values=formatted_labs,
+            current_differential=formatted_diff,
+            previous_rounds=formatted_rounds,
+            user_challenge=request.user_challenge
+        )
+        
+        response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
+        data = extract_json(response)
+        
+        # Parse updated differential with robust field name handling
+        diagnoses = _parse_differential(data.get("updated_differential", []))
+        
+        return DebateTurnResponse(
+            ai_response=data.get("ai_response", "I need more information to respond."),
+            updated_differential=diagnoses if diagnoses else request.current_differential,
+            suggested_test=data.get("suggested_test"),
+            orchestrated=False,
+        )
+    except Exception as e:
+        logger.error(f"MedGemma-only debate turn failed: {e}")
+        # Return a graceful response instead of HTTP 500
+        return DebateTurnResponse(
+            ai_response=f"I encountered a processing error, but here's what I can say: {str(e)[:200]}. Please try rephrasing your challenge.",
+            updated_differential=request.current_differential,
+            suggested_test=None,
+            orchestrated=False,
+        )
 
 
 def _parse_differential(updated_diff: list) -> list[Diagnosis]:
