@@ -19,23 +19,25 @@
 
 ## 🔧 Tech Stack (Final, No Alternatives)
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | Next.js 14 (App Router) + **HeroUI v3** |
-| Backend | Python FastAPI |
+| Layer    | Technology                                                 |
+| -------- | ---------------------------------------------------------- |
+| Frontend | Next.js 14 (App Router) + **HeroUI v3**                    |
+| Backend  | Python FastAPI                                             |
 | AI Model | MedGemma 4B-it (bfloat16, via AutoModelForImageTextToText) |
-| Hosting | Vercel (free) |
+| Hosting  | Vercel (free)                                              |
 
 > **Note**: Tailwind v4 uses `@theme` syntax which may trigger "Unknown at rule" warnings in IDEs. These are false positives.
 
 **No Gemini. No fallbacks. MedGemma only.**
 
 ### Brand Identity
+
 - **Design System**: Medical Dark Theme (Slate #0F172A)
 - **Key UI Elements**: Glassmorphism headers, Pulse animations, Teal accents
 - **Typography**: Outfit (Modern, Geometric)
 
 ### AMD GPU Setup (Required)
+
 ```powershell
 $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 ```
@@ -90,29 +92,30 @@ Sturgeon/
 
 ## 🔑 Key Files Reference
 
-| File | Purpose |
-|------|---------|
-| `brain/.../sturgeon_project_summary.md` | Complete technical plan |
-| `brain/.../hai_def_models_reference.md` | MedGemma capabilities |
-| `brain/.../medgemma_hackathon_analysis.md` | Hackathon details |
+| File                                       | Purpose                 |
+| ------------------------------------------ | ----------------------- |
+| `brain/.../sturgeon_project_summary.md`    | Complete technical plan |
+| `brain/.../hai_def_models_reference.md`    | MedGemma capabilities   |
+| `brain/.../medgemma_hackathon_analysis.md` | Hackathon details       |
 
 ---
 
 ## ⚠️ Critical Constraints
 
-| Constraint | Details |
-|------------|---------|
-| HAI-DEF Required | Must use MedGemma (no vanilla Gemini) |
-| Hardware | AMD RX 9060 XT (16GB) → Use bfloat16 |
-| Time | ~19 days remaining |
-| MedGemma API | Use `AutoModelForImageTextToText` + `AutoProcessor` |
-| AMD GPU | Set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` |
+| Constraint       | Details                                             |
+| ---------------- | --------------------------------------------------- |
+| HAI-DEF Required | Must use MedGemma (no vanilla Gemini)               |
+| Hardware         | AMD RX 9060 XT (16GB) → Use bfloat16                |
+| Time             | ~19 days remaining                                  |
+| MedGemma API     | Use `AutoModelForImageTextToText` + `AutoProcessor` |
+| AMD GPU          | Set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`     |
 
 ---
 
 ## 🚀 Current Status
 
 ### Completed
+
 - [x] Project planning
 - [x] Tech stack finalized
 - [x] Architecture designed
@@ -124,12 +127,21 @@ Sturgeon/
 - [x] Install HeroUI v3 + Agent Skills
 - [x] Build Upload page (`/`)
 - [x] Build Debate page (`/debate`)
+- [x] Build Summary page (`/summary`)
 - [x] Create GitHub repo (weekijie/Sturgeon)
+- [x] Connect frontend to backend API
+- [x] Test full E2E flow (Upload → Debate → Summary)
 
-### In Progress
-- [ ] Build Summary page (`/summary`)
-- [ ] Connect frontend to backend API
-- [ ] Test full flow
+### Known Issues
+
+- [ ] Multi-turn debate chat history persistence needs re-architecture
+
+### Next Steps
+
+- [ ] Fix multi-turn debate chat history
+- [ ] Add lab report file parsing (`/extract-labs`)
+- [ ] Add session persistence (localStorage)
+- [ ] Prepare demo cases
 
 ---
 
@@ -137,7 +149,7 @@ Sturgeon/
 
 See `CHANGELOG.md` for all code changes.
 
-**Feb 6, 2026**: Project setup complete. MedGemma 4B working on AMD RX 9060 XT with bfloat16.
+**Feb 7, 2026**: Backend integration complete. E2E flow working with MedGemma.
 
 ---
 

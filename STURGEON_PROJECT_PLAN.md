@@ -6,6 +6,7 @@
 ---
 
 ## 📋 Table of Contents
+
 1. [Project Overview](#project-overview)
 2. [Prize Strategy](#prize-strategy)
 3. [Hackathon Compliance](#hackathon-compliance)
@@ -25,12 +26,14 @@
 ## Project Overview
 
 ### The Problem
+
 > **12 million Americans are misdiagnosed each year** (1 in 20 patients).
-> *Source: BMJ Quality & Safety*
+> _Source: BMJ Quality & Safety_
 
 Misdiagnosis leads to delayed treatment, unnecessary procedures, and preventable deaths. The challenge: no clinician can hold all possible diagnoses in mind while evaluating a complex case.
 
 ### The Solution
+
 **Sturgeon** is a diagnostic debate AI inspired by House MD. It simulates the collaborative reasoning that happens when a medical team debates a case:
 
 1. Clinician uploads evidence (lab reports, patient history)
@@ -40,6 +43,7 @@ Misdiagnosis leads to delayed treatment, unnecessary procedures, and preventable
 5. Process repeats until diagnosis is reached
 
 ### Why This Works
+
 In medical dramas like House MD, correct diagnoses emerge from debate—not from a single doctor's first impression. Sturgeon brings that collaborative reasoning process to every clinician.
 
 ---
@@ -48,26 +52,27 @@ In medical dramas like House MD, correct diagnoses emerge from debate—not from
 
 ### Target Tracks
 
-| Track | Prize Pool | Sturgeon Fit | Strategy |
-|-------|-----------|--------------|----------|
-| **Main Track** | $75K (Top 4) | ⭐⭐⭐⭐⭐ | Clear problem, quantified impact |
-| **Agentic Workflow** | $10K (2 winners) | ⭐⭐⭐⭐⭐ | **Primary target** |
-| Novel Task | $10K (2 winners) | ⭐⭐⭐ | Not the best fit |
-| Edge AI | $5K | ⭐⭐ | Not targeting |
+| Track                | Prize Pool       | Sturgeon Fit | Strategy                         |
+| -------------------- | ---------------- | ------------ | -------------------------------- |
+| **Main Track**       | $75K (Top 4)     | ⭐⭐⭐⭐⭐   | Clear problem, quantified impact |
+| **Agentic Workflow** | $10K (2 winners) | ⭐⭐⭐⭐⭐   | **Primary target**               |
+| Novel Task           | $10K (2 winners) | ⭐⭐⭐       | Not the best fit                 |
+| Edge AI              | $5K              | ⭐⭐         | Not targeting                    |
 
 ### Agentic Workflow Positioning
 
 **Prize criteria** (from competition rules):
+
 > "Awarded for the project that most effectively reimagines a complex workflow by deploying HAI-DEF models as intelligent agents or callable tools."
 
 **How Sturgeon meets this**:
 
-| Agentic Criterion | Sturgeon Implementation |
-|-------------------|------------------------|
-| Complex workflow reimagined | Differential diagnosis via multi-round debate |
+| Agentic Criterion            | Sturgeon Implementation                         |
+| ---------------------------- | ----------------------------------------------- |
+| Complex workflow reimagined  | Differential diagnosis via multi-round debate   |
 | HAI-DEF as intelligent agent | MedGemma reasons, defends, updates autonomously |
-| Callable tool behavior | Extract labs → Reason → Suggest tests → Update |
-| Improved outcomes | Catches overlooked diagnoses |
+| Callable tool behavior       | Extract labs → Reason → Suggest tests → Update  |
+| Improved outcomes            | Catches overlooked diagnoses                    |
 
 ---
 
@@ -75,24 +80,24 @@ In medical dramas like House MD, correct diagnoses emerge from debate—not from
 
 ### Judging Criteria Mapping
 
-| Criterion | Weight | How Sturgeon Scores |
-|-----------|--------|---------------------|
-| **Effective HAI-DEF Use** | 20% | MedGemma handles ALL reasoning: extraction, differential, debate, summary |
-| **Problem Importance** | 15% | 12M misdiagnoses/year is quantifiable, severe |
-| **Impact Potential** | 15% | Directly reduces diagnostic errors |
-| **Technical Feasibility** | 20% | Proven stack (Next.js + FastAPI + MedGemma) |
-| **Execution & Communication** | 30% | Structured demo, clear write-up, clean code |
+| Criterion                     | Weight | How Sturgeon Scores                                                       |
+| ----------------------------- | ------ | ------------------------------------------------------------------------- |
+| **Effective HAI-DEF Use**     | 20%    | MedGemma handles ALL reasoning: extraction, differential, debate, summary |
+| **Problem Importance**        | 15%    | 12M misdiagnoses/year is quantifiable, severe                             |
+| **Impact Potential**          | 15%    | Directly reduces diagnostic errors                                        |
+| **Technical Feasibility**     | 20%    | Proven stack (Next.js + FastAPI + MedGemma)                               |
+| **Execution & Communication** | 30%    | Structured demo, clear write-up, clean code                               |
 
-*Source: [medgemma_hackathon_analysis.md](file:///C:/Users/weeki/.gemini/antigravity/brain/0317cc99-b5d0-40dd-a0ee-1df59c76af76/medgemma_hackathon_analysis.md)*
+_Source: [medgemma_hackathon_analysis.md](file:///C:/Users/weeki/.gemini/antigravity/brain/0317cc99-b5d0-40dd-a0ee-1df59c76af76/medgemma_hackathon_analysis.md)_
 
 ### Submission Requirements
 
-| Requirement | Plan |
-|-------------|------|
-| Video Demo (≤3 min) | Scripted demo showing full debate flow |
-| Write-up (≤3 pages) | Problem → Solution → Technical → Impact |
-| Reproducible Code | GitHub repo with README, requirements.txt |
-| **Bonus**: Live demo | Deploy to Vercel (free) |
+| Requirement          | Plan                                      |
+| -------------------- | ----------------------------------------- |
+| Video Demo (≤3 min)  | Scripted demo showing full debate flow    |
+| Write-up (≤3 pages)  | Problem → Solution → Technical → Impact   |
+| Reproducible Code    | GitHub repo with README, requirements.txt |
+| **Bonus**: Live demo | Deploy to Vercel (free)                   |
 
 ---
 
@@ -100,12 +105,12 @@ In medical dramas like House MD, correct diagnoses emerge from debate—not from
 
 **Single AI model. No alternatives. No Gemini.**
 
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| Frontend | Next.js 14 (App Router) | UI + API routes |
-| Backend | Python FastAPI | MedGemma inference |
-| AI Model | **MedGemma 4B-it** (bfloat16) | ALL medical reasoning |
-| Hosting | Vercel (frontend) + local/Kaggle (AI) | Free deployment |
+| Layer    | Technology                            | Purpose               |
+| -------- | ------------------------------------- | --------------------- |
+| Frontend | Next.js 14 (App Router)               | UI + API routes       |
+| Backend  | Python FastAPI                        | MedGemma inference    |
+| AI Model | **MedGemma 4B-it** (bfloat16)         | ALL medical reasoning |
+| Hosting  | Vercel (frontend) + local/Kaggle (AI) | Free deployment       |
 
 ### Why MedGemma Only
 
@@ -116,22 +121,22 @@ In medical dramas like House MD, correct diagnoses emerge from debate—not from
 
 ### MedGemma 4B Capabilities Used
 
-*Source: [hai_def_models_reference.md](file:///C:/Users/weeki/.gemini/antigravity/brain/0317cc99-b5d0-40dd-a0ee-1df59c76af76/hai_def_models_reference.md)*
+_Source: [hai_def_models_reference.md](file:///C:/Users/weeki/.gemini/antigravity/brain/0317cc99-b5d0-40dd-a0ee-1df59c76af76/hai_def_models_reference.md)_
 
-| Capability | Sturgeon Usage |
-|------------|----------------|
-| Document Understanding | Extract lab values from PDF |
+| Capability             | Sturgeon Usage                  |
+| ---------------------- | ------------------------------- |
+| Document Understanding | Extract lab values from PDF     |
 | Medical Text Reasoning | Generate differential diagnoses |
-| Clinical Q&A | Respond to challenges |
-| Text Generation | Produce explanations |
+| Clinical Q&A           | Respond to challenges           |
+| Text Generation        | Produce explanations            |
 
 ### MedGemma 4B Limitations & Mitigations
 
-| Limitation | Mitigation |
-|------------|------------|
+| Limitation                   | Mitigation                                            |
+| ---------------------------- | ----------------------------------------------------- |
 | Not optimized for multi-turn | Re-inject full context each round (structured debate) |
-| Prompt sensitivity | Carefully engineered prompts (see below) |
-| Not clinical-grade | Clear disclaimers, educational framing |
+| Prompt sensitivity           | Carefully engineered prompts (see below)              |
+| Not clinical-grade           | Clear disclaimers, educational framing                |
 
 ---
 
@@ -185,7 +190,10 @@ In medical dramas like House MD, correct diagnoses emerge from debate—not from
 ```typescript
 interface CaseState {
   patientHistory: string;
-  labValues: Record<string, { value: number; unit: string; isAbnormal: boolean }>;
+  labValues: Record<
+    string,
+    { value: number; unit: string; isAbnormal: boolean }
+  >;
   differential: Diagnosis[];
   debateRounds: Round[];
   currentRound: number;
@@ -334,25 +342,26 @@ Be conversational but precise.
 
 ### Verified Configuration
 
-| Component | Spec | Purpose |
-|-----------|------|---------|
-| GPU | **AMD RX 9060 XT (16GB VRAM)** | MedGemma inference |
-| CPU | AMD Ryzen 5 3600 | General compute |
-| RAM | 32GB | Model loading headroom |
+| Component | Spec                           | Purpose                |
+| --------- | ------------------------------ | ---------------------- |
+| GPU       | **AMD RX 9060 XT (16GB VRAM)** | MedGemma inference     |
+| CPU       | AMD Ryzen 5 3600               | General compute        |
+| RAM       | 32GB                           | Model loading headroom |
 
 ### AMD GPU Requirements (ROCm 7.2)
 
 **Required environment variable:**
+
 ```powershell
 $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 ```
 
 ### MedGemma 4B Memory Footprint
 
-| Precision | VRAM Required | Fits 9060 XT? | Quality |
-|-----------|---------------|---------------|---------|
-| **bfloat16 (required for AMD)** | **~8-10 GB** | ✅ Yes | **Full quality** |
-| float16 | ~8-10 GB | ❌ Empty output on AMD | N/A |
+| Precision                       | VRAM Required | Fits 9060 XT?          | Quality          |
+| ------------------------------- | ------------- | ---------------------- | ---------------- |
+| **bfloat16 (required for AMD)** | **~8-10 GB**  | ✅ Yes                 | **Full quality** |
+| float16                         | ~8-10 GB      | ❌ Empty output on AMD | N/A              |
 
 ### Model Setup (AMD ROCm - Verified Working)
 
@@ -387,6 +396,7 @@ inputs = processor.apply_chat_template(
 ### Kaggle Backup Option
 
 If local GPU issues arise, use Kaggle notebooks:
+
 - Free T4 GPU (16GB VRAM)
 - Can run MedGemma 4B in FP16 directly
 - Judges can reproduce this setup
@@ -396,37 +406,32 @@ If local GPU issues arise, use Kaggle notebooks:
 ## Project Structure
 
 ```
-dxdebate/
+Sturgeon/
 ├── frontend/                        # Next.js 14
 │   ├── app/
-│   │   ├── page.tsx                # Home: upload + history
+│   │   ├── page.tsx                # Home: upload + history ✅
 │   │   ├── debate/
-│   │   │   └── page.tsx            # Debate chat UI
+│   │   │   └── page.tsx            # Debate chat UI ✅
 │   │   ├── summary/
-│   │   │   └── page.tsx            # Final diagnosis
+│   │   │   └── page.tsx            # Final diagnosis ✅
+│   │   ├── context/
+│   │   │   └── CaseContext.tsx     # State management ✅
 │   │   └── api/
-│   │       ├── extract/route.ts    # → Python /extract-labs
-│   │       ├── differential/route.ts # → Python /differential
-│   │       └── debate/route.ts     # → Python /debate-turn
-│   ├── components/
-│   │   ├── LabUpload.tsx           # PDF upload component
-│   │   ├── LabDisplay.tsx          # Show extracted values
-│   │   ├── DifferentialCard.tsx    # Single diagnosis card
-│   │   ├── DifferentialList.tsx    # List of diagnoses
-│   │   └── DebateChat.tsx          # Chat interface
-│   ├── lib/
-│   │   └── api.ts                  # API client
+│   │       ├── differential/route.ts # → Python /differential ✅
+│   │       ├── debate-turn/route.ts  # → Python /debate-turn ✅
+│   │       └── summary/route.ts      # → Python /summary ✅
 │   ├── package.json
 │   └── tailwind.config.js
 │
 ├── ai-service/                      # Python FastAPI
-│   ├── main.py                     # FastAPI app + routes
-│   ├── medgemma.py                 # Model loading + inference
-│   ├── prompts.py                  # Prompt templates
-│   ├── schemas.py                  # Pydantic models
+│   ├── main.py                     # FastAPI app + routes ✅
+│   ├── medgemma.py                 # Model loading + inference ✅
+│   ├── prompts.py                  # Prompt templates ✅
 │   └── requirements.txt
 │
-├── docker-compose.yml              # Local development
+├── CLAUDE.md                       # AI assistant instructions
+├── CHANGELOG.md                    # Session-by-session changes
+├── STURGEON_PROJECT_PLAN.md        # This file
 ├── README.md                       # Setup instructions
 └── SUBMISSION/
     ├── video.mp4                   # Demo video
@@ -439,28 +444,33 @@ dxdebate/
 
 **Available time**: ~85 hours (2-3h weekdays + full weekends)
 
-| Week | Dates | Focus | Deliverable | Hours |
-|------|-------|-------|-------------|-------|
-| **1** | Feb 4-9 | Foundation | MedGemma inference working, FastAPI endpoints, Next.js shell | 20h |
-| **2** | Feb 10-16 | Core Features | Full debate flow, UI complete, 2 demo cases working | 24h |
-| **3** | Feb 17-23 | Polish | Demo video, write-up, GitHub cleanup, Vercel deploy | 20h |
-| Buffer | Ongoing | Issues | Bug fixes, edge cases | 15h |
+| Week   | Dates     | Focus         | Deliverable                                                  | Hours |
+| ------ | --------- | ------------- | ------------------------------------------------------------ | ----- |
+| **1**  | Feb 4-9   | Foundation    | MedGemma inference working, FastAPI endpoints, Next.js shell | 20h   |
+| **2**  | Feb 10-16 | Core Features | Full debate flow, UI complete, 2 demo cases working          | 24h   |
+| **3**  | Feb 17-23 | Polish        | Demo video, write-up, GitHub cleanup, Vercel deploy          | 20h   |
+| Buffer | Ongoing   | Issues        | Bug fixes, edge cases                                        | 15h   |
 
-### Week 1 Milestones
+### Week 1 Milestones ✅
+
 - [x] MedGemma 4B running locally (bfloat16 on AMD)
 - [x] HuggingFace login verified
 - [x] Next.js frontend initialized
 - [x] FastAPI backend initialized
-- [ ] `/extract-labs` endpoint working
-- [ ] `/differential` endpoint working
+- [x] `/extract-labs` endpoint working
+- [x] `/differential` endpoint working
 
-### Week 2 Milestones
-- [ ] `/debate-turn` endpoint working
-- [ ] Full debate flow from upload to summary
+### Week 2 Milestones (In Progress)
+
+- [x] `/debate-turn` endpoint working
+- [x] `/summary` endpoint working
+- [x] Full E2E flow from upload to summary
+- [ ] Multi-turn debate chat persistence (needs re-architecture)
 - [ ] 2 demo cases prepared and tested
 - [ ] UI polished
 
 ### Week 3 Milestones
+
 - [ ] Demo video recorded (≤3 min)
 - [ ] Write-up completed (≤3 pages)
 - [ ] GitHub repo cleaned up with README
@@ -474,35 +484,43 @@ dxdebate/
 **Total: 3 minutes**
 
 ### [0:00-0:20] Hook
+
 > "12 million Americans are misdiagnosed every year. In shows like House MD, correct diagnoses come from debate—doctors challenging each other's thinking. Sturgeon brings that process to every clinician."
 
 ### [0:20-0:50] Upload Evidence
+
 - Show: Upload lab report PDF
 - Show: MedGemma extracts values, highlights abnormals
 - Show: Enter patient history (text input)
 
 ### [0:50-1:20] Initial Differential
+
 - Show: AI generates 3-4 diagnoses
 - Show: Each has probability, supporting evidence, counter-evidence
 - Highlight: "Let's challenge the AI's thinking"
 
 ### [1:20-2:20] Debate Rounds (2-3)
+
 **Round 1:**
+
 - User: "But the CRP is elevated with normal WBC—doesn't that rule out bacterial infection?"
 - AI: "Good point. Elevated CRP with normal WBC suggests viral or inflammatory etiology. Updating bacterial pneumonia to low probability."
 
 **Round 2:**
+
 - User: "What test would differentiate the remaining diagnoses?"
 - AI: "A ferritin level would help. Elevated ferritin with these findings would point toward hemochromatosis."
 - User: "Ferritin is 847."
 - AI: "That strongly supports hemochromatosis. Recommend genetic testing for HFE mutations."
 
 ### [2:20-2:50] Summary
+
 - Show: Final diagnosis with full reasoning chain
 - Show: What was ruled out and why
 - Show: Recommended next steps
 
 ### [2:50-3:00] Closing
+
 > "DxDebate: Every clinician deserves a team to challenge their thinking."
 
 ---
@@ -510,6 +528,7 @@ dxdebate/
 ## Submission Checklist
 
 ### Required
+
 - [ ] Video demo uploaded (≤3 min, MP4)
 - [ ] Write-up completed (≤3 pages, using Kaggle template)
 - [ ] Public GitHub repository with:
@@ -520,6 +539,7 @@ dxdebate/
 - [ ] Kaggle Writeup created and submitted
 
 ### Bonus (Improves Score)
+
 - [ ] Live demo on Vercel
 - [ ] HuggingFace model page (prompt templates)
 
@@ -527,13 +547,13 @@ dxdebate/
 
 ## Risk Mitigation
 
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| MedGemma multi-turn degrades | Medium | High | Re-inject full context each round |
-| Quantization hurts quality | N/A | N/A | Using FP16 (full quality) |
-| Time overrun | Medium | High | Scope down to labs-only first |
-| Demo case fails on video | Medium | High | Prepare 3 cases, use most reliable |
-| GPU issues on 9060 XT | Low | Medium | Kaggle backup ready |
+| Risk                         | Probability | Impact | Mitigation                         |
+| ---------------------------- | ----------- | ------ | ---------------------------------- |
+| MedGemma multi-turn degrades | Medium      | High   | Re-inject full context each round  |
+| Quantization hurts quality   | N/A         | N/A    | Using FP16 (full quality)          |
+| Time overrun                 | Medium      | High   | Scope down to labs-only first      |
+| Demo case fails on video     | Medium      | High   | Prepare 3 cases, use most reliable |
+| GPU issues on 9060 XT        | Low         | Medium | Kaggle backup ready                |
 
 ---
 

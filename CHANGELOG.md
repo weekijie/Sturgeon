@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ## [2026-02-06] Session 1 - Project Setup
 
 ### Added
+
 - `frontend/` - Next.js 14 with TypeScript and Tailwind CSS
 - `ai-service/main.py` - FastAPI backend with endpoint stubs
 - `ai-service/medgemma.py` - MedGemma model loader (bfloat16 for AMD)
@@ -16,11 +17,13 @@ All notable changes to this project will be documented in this file.
 - `CLAUDE.md` - AI assistant instructions
 
 ### Configuration
+
 - **AMD GPU (ROCm 7.2)**: Requires `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`
 - **Model**: MedGemma 4B-it with bfloat16 precision
 - **API Classes**: `AutoModelForImageTextToText` + `AutoProcessor`
 
 ### Technical Discoveries
+
 - MedGemma 4B-it is a vision-language model, not a standard LLM
 - Must use `AutoModelForImageTextToText` (not `AutoModelForCausalLM`)
 - Must use `AutoProcessor` (not `AutoTokenizer`)
@@ -32,6 +35,7 @@ All notable changes to this project will be documented in this file.
 ## [2026-02-06] Session 2 - Backend Integration
 
 ### Changed
+
 - `ai-service/main.py` - Wired all 4 endpoints to MedGemma:
   - `/extract-labs` - Extracts structured lab values from text
   - `/differential` - Generates 3-4 differential diagnoses
@@ -46,6 +50,7 @@ All notable changes to this project will be documented in this file.
 ## [2026-02-06] Session 3 - Frontend UI with HeroUI v3
 
 ### Added
+
 - **HeroUI v3** component library (`@heroui/react@beta`, `@heroui/styles@beta`)
 - **HeroUI Agent Skills** for component documentation access
 - `frontend/app/page.tsx` - Upload page with:
@@ -59,6 +64,7 @@ All notable changes to this project will be documented in this file.
   - Challenge input TextField
 
 ### Changed
+
 - `frontend/app/globals.css` - Medical dark theme with HeroUI:
   - Background: #0F172A (Slate)
   - Accent: #1E40AF (Medical Blue)
@@ -68,12 +74,14 @@ All notable changes to this project will be documented in this file.
 - `.gitignore` - Added for Node/Python project
 
 ### Technical Notes
+
 - HeroUI v3 uses **compound components**: `<Card><Card.Header>...</Card.Header></Card>`
 - Uses **oklch color space** for theming
 - **No Provider needed** (unlike v2)
 - Skills available: `node scripts/get_component_docs.mjs Button Card`
 
 ### Polished
+
 - **UI Design System**: Applied Glassmorphism and Pulse animations for premium feel
   - `Header`: Sticky backdrop-blur-md on all pages
   - `Cards`: Hover effects (border-teal, shadow, scale)
@@ -82,8 +90,46 @@ All notable changes to this project will be documented in this file.
 - **Configuration**: Consolidated `frontend/.gitignore` into root `.gitignore`
 
 ### Repository
+
 - GitHub repo created: https://github.com/weekijie/Sturgeon
 - Initial commit pushed (57 files)
+
+---
+
+## [2026-02-07] Session 4 - Backend Integration & E2E Flow
+
+### Added
+
+- **Frontend API Routes**: Created Next.js API routes to proxy backend calls:
+  - `frontend/app/api/differential/route.ts` → POST /differential
+  - `frontend/app/api/debate-turn/route.ts` → POST /debate-turn
+  - `frontend/app/api/summary/route.ts` → POST /summary
+- **State Management**: `frontend/app/context/CaseContext.tsx` — React Context for sharing case data (patient history, differential, debate rounds) across pages
+
+### Changed
+
+- `frontend/app/page.tsx` - Wired to `/api/differential`, stores results in context, navigates to debate
+- `frontend/app/debate/page.tsx` - Loads from context, calls `/api/debate-turn` for AI responses
+- `frontend/app/summary/page.tsx` - Calls `/api/summary`, displays final diagnosis
+- `frontend/app/layout.tsx` - Wrapped with `CaseProvider`
+
+### Fixed
+
+- `ai-service/main.py`:
+  - Fixed `ruled_out` parsing to handle dict format from MedGemma
+  - Fixed `updated_differential` parsing with robust field name mapping
+- `ai-service/prompts.py`:
+  - Made `DEBATE_TURN_PROMPT` explicit about expected JSON format
+
+### Verified
+
+- ✅ Empty input validation (button disabled)
+- ✅ Special characters & lab values with units
+- ✅ Full E2E flow: Upload → Debate → Summary
+
+### Known Issues
+
+- Multi-turn debate chat history persistence needs re-architecture
 
 ---
 
