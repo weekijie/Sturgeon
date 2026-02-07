@@ -29,6 +29,19 @@
 
 > **Note**: Tailwind v4 uses `@theme` syntax which may trigger "Unknown at rule" warnings in IDEs. These are false positives.
 
+### HeroUI v3 — IMPORTANT
+
+**Always load the `heroui-react` agent skill before making frontend UI changes.** This ensures correct v3 patterns are used.
+
+Key v3 rules:
+- **No Provider needed** (unlike v2 — do NOT add `HeroUIProvider`)
+- **Compound components**: `<Card><Card.Header>...</Card.Header></Card>` (not flat props)
+- **Use `onPress` not `onClick`** for Button/interactive components
+- **Tailwind v4 required** — uses `@theme` and `oklch` color space
+- **Packages**: `@heroui/react@beta` + `@heroui/styles@beta`
+- **Fetch component docs before implementing**: `node scripts/get_component_docs.mjs Button Card`
+- Skill scripts location: `.agents/skills/heroui-react/scripts/`
+
 ### Architecture: Agentic Dual-Model
 
 - **MedGemma** = Medical Specialist (callable tool). Handles all clinical reasoning, medical image analysis, lab extraction, differential diagnosis. This is the HAI-DEF model.
@@ -62,12 +75,15 @@ $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 
 ## Development Methodology
 
-1. **Surgical changes only**: Make minimal, focused fixes
-2. **Evidence-based debugging**: Add minimal, targeted logging
-3. **Fix root causes**: Address underlying issues, not symptoms
-4. **Simple > Complex**: Let TypeScript catch errors, not excessive runtime checks
-5. **Collaborative process**: Work with user to identify most efficient solution
-6. **Web search when uncertain**: Verify APIs/libraries via documentation, don't assume
+1. **Plan first, build second**: Always present a clear plan before making changes. Wait for explicit "build mode" approval before executing code changes. Never skip ahead.
+2. **Test intensively before committing**: Every change must be verified (build check, manual test plan, or runtime test) before committing or moving to the next task. No "ship and pray."
+3. **Surgical changes only**: Make minimal, focused fixes
+4. **Evidence-based debugging**: Add minimal, targeted logging
+5. **Fix root causes**: Address underlying issues, not symptoms
+6. **Simple > Complex**: Let TypeScript catch errors, not excessive runtime checks
+7. **Collaborative process**: Work with user to identify most efficient solution
+8. **Web search when uncertain**: Verify APIs/libraries via documentation, don't assume
+9. **Always load `heroui-react` skill** before making any frontend UI changes
 
 ---
 

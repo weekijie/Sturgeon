@@ -254,7 +254,7 @@ export default function DebatePage() {
                     : "bg-surface text-foreground"
                   }`}
                 >
-                  <p className="text-sm leading-relaxed">{msg.content}</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
                 </div>
               </div>
             ))}

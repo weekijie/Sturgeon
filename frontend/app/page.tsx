@@ -20,6 +20,31 @@ function readAsDataUrl(file: File): Promise<string> {
   });
 }
 
+// Component: Expandable text with "Read More" toggle
+function ExpandableText({ text, previewLength = 400 }: { text: string; previewLength?: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const needsExpansion = text.length > previewLength;
+
+  return (
+    <div>
+      <div className={`text-sm leading-relaxed whitespace-pre-wrap ${!expanded && needsExpansion ? "max-h-48 overflow-hidden relative" : ""}`}>
+        {expanded || !needsExpansion ? text : text.slice(0, previewLength) + "..."}
+        {!expanded && needsExpansion && (
+          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-surface/90 to-transparent" />
+        )}
+      </div>
+      {needsExpansion && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          className="text-xs text-teal hover:text-teal/80 mt-1 font-medium transition-colors"
+        >
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function UploadPage() {
   const router = useRouter();
   const { setPatientHistory, setDifferential, setImageAnalysis } = useCase();
@@ -59,19 +84,22 @@ export default function UploadPage() {
     }
   }, []);
 
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-      setImageResult(null);
-      if (isImageFile(selectedFile)) {
-        const url = await readAsDataUrl(selectedFile);
-        setImagePreview(url);
-      } else {
-        setImagePreview(null);
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFile = e.target.files?.[0];
+      if (selectedFile) {
+        setFile(selectedFile);
+        setImageResult(null);
+        if (isImageFile(selectedFile)) {
+          const url = await readAsDataUrl(selectedFile);
+          setImagePreview(url);
+        } else {
+          setImagePreview(null);
+        }
       }
-    }
-  }, []);
+    },
+    [],
+  );
 
   const clearFile = useCallback(() => {
     setFile(null);
@@ -104,7 +132,7 @@ export default function UploadPage() {
         if (!imageResponse.ok) {
           const errData = await imageResponse.json().catch(() => ({}));
           throw new Error(
-            errData.details || errData.error || "Image analysis failed"
+            errData.details || errData.error || "Image analysis failed",
           );
         }
 
@@ -143,7 +171,11 @@ export default function UploadPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to generate differential. Please try again.");
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(
+          errData.detail ||
+            "Failed to generate differential. Please try again.",
+        );
       }
 
       const data = await response.json();
@@ -181,7 +213,8 @@ export default function UploadPage() {
           <div className="p-6 pb-0">
             <h2 className="text-xl font-semibold">Upload Evidence</h2>
             <p className="text-muted text-sm mt-1">
-              Upload medical images (X-ray, dermatology, pathology) or provide patient history
+              Upload medical images (X-ray, dermatology, pathology) or provide
+              patient history
             </p>
           </div>
 
@@ -195,9 +228,10 @@ export default function UploadPage() {
               className={`
                 relative border-2 border-dashed rounded-xl p-8 text-center
                 transition-all duration-200 cursor-pointer
-                ${isDragging
-                  ? "border-accent bg-accent/10"
-                  : "border-border hover:border-accent/50 hover:bg-surface/50"
+                ${
+                  isDragging
+                    ? "border-accent bg-accent/10"
+                    : "border-border hover:border-accent/50 hover:bg-surface/50"
                 }
                 ${file ? "border-success bg-success/10" : ""}
               `}
@@ -250,7 +284,8 @@ export default function UploadPage() {
                     Drop medical image or report here
                   </p>
                   <p className="text-sm text-muted">
-                    Chest X-ray, dermatology photo, pathology slide, or text report
+                    Chest X-ray, dermatology photo, pathology slide, or text
+                    report
                   </p>
                 </div>
               )}
@@ -265,7 +300,8 @@ export default function UploadPage() {
                     {imageResult.modality}
                   </Chip>
                   <Chip size="sm" variant="flat">
-                    {(imageResult.image_type_confidence * 100).toFixed(0)}% confident
+                    {(imageResult.image_type_confidence * 100).toFixed(0)}%
+                    confident
                   </Chip>
                 </div>
 
@@ -290,11 +326,10 @@ export default function UploadPage() {
 
                 {/* MedGemma interpretation */}
                 <div>
-                  <p className="text-xs text-muted mb-1">MedGemma Interpretation:</p>
-                  <p className="text-sm leading-relaxed whitespace-pre-line">
-                    {imageResult.medgemma_analysis.slice(0, 500)}
-                    {imageResult.medgemma_analysis.length > 500 && "..."}
+                  <p className="text-xs text-muted mb-1">
+                    MedGemma Interpretation:
                   </p>
+                  <ExpandableText text={imageResult.medgemma_analysis} />
                 </div>
               </div>
             )}
@@ -302,7 +337,10 @@ export default function UploadPage() {
             {/* Patient History */}
             <div className="space-y-2">
               <label htmlFor="patient-history" className="text-sm font-medium">
-                Patient History {file && isImageFile(file) ? "(Optional — enhances analysis)" : "(Required)"}
+                Patient History{" "}
+                {file && isImageFile(file)
+                  ? "(Optional — enhances analysis)"
+                  : "(Required)"}
               </label>
               <textarea
                 id="patient-history"

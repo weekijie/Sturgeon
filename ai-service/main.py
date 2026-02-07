@@ -177,8 +177,66 @@ class ImageAnalysisResponse(BaseModel):
     medgemma_analysis: str
 
 
+def _repair_truncated_json(text: str) -> str:
+    """Repair JSON that was truncated mid-generation by closing open structures.
+    
+    Strategy: walk the string tracking open brackets/braces/strings,
+    then append the necessary closing tokens.
+    """
+    # Strip trailing whitespace and incomplete tokens
+    text = text.rstrip()
+    # Remove trailing comma (common before truncation)
+    text = re.sub(r',\s*$', '', text)
+    
+    # If we're inside a string value that was truncated, close it
+    # Count unescaped quotes to determine if we're inside a string
+    in_string = False
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c == '\\' and in_string:
+            i += 2  # skip escaped char
+            continue
+        if c == '"':
+            in_string = not in_string
+        i += 1
+    
+    if in_string:
+        text += '"'
+    
+    # Now close any open brackets/braces
+    stack = []
+    in_str = False
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c == '\\' and in_str:
+            i += 2
+            continue
+        if c == '"':
+            in_str = not in_str
+        elif not in_str:
+            if c in ('{', '['):
+                stack.append(c)
+            elif c == '}' and stack and stack[-1] == '{':
+                stack.pop()
+            elif c == ']' and stack and stack[-1] == '[':
+                stack.pop()
+        i += 1
+    
+    # Close in reverse order
+    for opener in reversed(stack):
+        text += ']' if opener == '[' else '}'
+    
+    return text
+
+
 def extract_json(text: str) -> dict:
-    """Extract JSON from model response, handling markdown code blocks."""
+    """Extract JSON from model response with robust repair for truncated output.
+    
+    Handles: markdown code blocks, truncated JSON, missing commas,
+    trailing commas, and unbalanced braces.
+    """
     # Try to find JSON in code blocks first
     json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
     if json_match:
@@ -189,12 +247,93 @@ def extract_json(text: str) -> dict:
     end = text.rfind('}')
     if start != -1 and end != -1:
         text = text[start:end + 1]
+    elif start != -1:
+        # No closing brace — truncated output
+        text = text[start:]
+    else:
+        logger.error(f"No JSON object found in response: {text[:200]}...")
+        raise HTTPException(status_code=500, detail="Model response contained no JSON")
     
+    # Attempt 1: direct parse
     try:
         return json.loads(text)
     except json.JSONDecodeError as e:
-        logger.error(f"JSON parse error: {e}\nText: {text[:500]}")
-        raise HTTPException(status_code=500, detail=f"Failed to parse model response as JSON")
+        logger.warning(f"JSON parse error (attempt 1 - direct): {e}")
+    
+    # Attempt 2: fix missing commas between key-value pairs
+    try:
+        fixed = re.sub(r'"\s*\n\s*"', '",\n"', text)
+        # Also fix trailing commas before closing brackets
+        fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+        return json.loads(fixed)
+    except json.JSONDecodeError as e:
+        logger.warning(f"JSON parse error (attempt 2 - comma fix): {e}")
+    
+    # Attempt 3: repair truncated JSON by closing open structures
+    try:
+        repaired = _repair_truncated_json(text)
+        # Clean trailing commas that appear before closing brackets
+        repaired = re.sub(r',\s*([}\]])', r'\1', repaired)
+        result = json.loads(repaired)
+        logger.info("JSON successfully repaired from truncated output")
+        return result
+    except json.JSONDecodeError as e:
+        logger.warning(f"JSON parse error (attempt 3 - truncation repair): {e}")
+    
+    # Attempt 4: aggressive — extract whatever valid diagnoses we can
+    # Look for complete diagnosis objects within the text
+    try:
+        diagnoses = []
+        # Find all complete JSON objects that look like diagnoses
+        pattern = r'\{[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*\}'
+        matches = re.findall(pattern, text, re.DOTALL)
+        for match in matches:
+            try:
+                dx = json.loads(match)
+                diagnoses.append(dx)
+            except json.JSONDecodeError:
+                continue
+        if diagnoses:
+            logger.info(f"Extracted {len(diagnoses)} diagnoses via regex fallback")
+            return {"diagnoses": diagnoses}
+    except Exception:
+        pass
+    
+    logger.error(f"All JSON repair attempts failed.\nRaw text: {text[:500]}...")
+    raise HTTPException(status_code=500, detail="Failed to parse model response as JSON")
+
+
+def strip_disclaimers(text: str) -> str:
+    """Strip common AI safety disclaimers from model output.
+    
+    MedGemma sometimes prepends/appends standard disclaimers like:
+    - "I am a large language model..."
+    - "As an AI language model..."
+    - "I'm not a medical professional..."
+    - "This is not medical advice..."
+    """
+    # Patterns to remove (case-insensitive, match full sentences)
+    disclaimer_patterns = [
+        r"(?:^|\n)\s*(?:I am|I'm) (?:a |an )?(?:large )?(?:language model|AI|artificial intelligence)[^.]*\.\s*",
+        r"(?:^|\n)\s*As an AI(?:\s+language model)?[^.]*\.\s*",
+        r"(?:^|\n)\s*(?:I'm not|I am not) a (?:medical |healthcare )?(?:professional|doctor|physician)[^.]*\.\s*",
+        r"(?:^|\n)\s*(?:This|The following) is not (?:intended as )?medical advice[^.]*\.\s*",
+        r"(?:^|\n)\s*(?:It is (?:essential|important) to |Please |Always )?consult (?:with )?(?:a |your )?(?:qualified )?(?:healthcare|medical) (?:professional|provider|doctor)[^.]*\.\s*",
+        r"(?:^|\n)\s*(?:I cannot|I can't) (?:provide|give|offer) medical (?:advice|diagnosis|treatment)[^.]*\.\s*",
+        # Match **Disclaimer** or Disclaimer blocks (may span multiple sentences to end of text)
+        r"(?:^|\n)\s*\*{0,2}Disclaimer\*{0,2}:?\s*.*",
+        r"(?:^|\n)\s*(?:Important|Note):?\s*(?:I am|I'm|This is) (?:not |an )?(?:AI|a substitute)[^.]*\.\s*",
+    ]
+    
+    cleaned = text
+    for pattern in disclaimer_patterns:
+        # Use DOTALL for the Disclaimer pattern so .* matches across newlines
+        flags = re.IGNORECASE | re.DOTALL if 'Disclaimer' in pattern else re.IGNORECASE
+        cleaned = re.sub(pattern, '\n', cleaned, flags=flags)
+    
+    # Clean up excess whitespace
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+    return cleaned
 
 
 def format_lab_values(lab_values: dict) -> str:
@@ -278,7 +417,7 @@ async def generate_differential(request: DifferentialRequest):
         formatted_lab_values=formatted_labs
     )
     
-    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
+    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=3072)
     data = extract_json(response)
     
     diagnoses = []
@@ -486,6 +625,9 @@ Be specific and cite visible features in the image."""
     except Exception as e:
         logger.error(f"MedGemma image analysis failed: {e}")
         medgemma_analysis = f"Image analysis encountered an error: {str(e)}"
+    
+    # Strip AI disclaimers from output for clean UI presentation
+    medgemma_analysis = strip_disclaimers(medgemma_analysis)
     
     return ImageAnalysisResponse(
         image_type=triage_result.get("image_type", "medical image"),

@@ -42,21 +42,22 @@ Lab Values:
 {formatted_lab_values}
 
 For each diagnosis, provide:
-1. Diagnosis name
-2. Probability (high/medium/low)
-3. Supporting evidence from this case
-4. Evidence that argues against this diagnosis
-5. Tests that would help confirm or rule out
+1. Diagnosis name (short)
+2. Probability: "high", "medium", or "low"
+3. Supporting evidence: 2-3 brief phrases
+4. Against evidence: 1-2 brief phrases
+5. Suggested tests: 1-2 test names
 
-Return as structured JSON with this format:
+IMPORTANT: Keep evidence phrases SHORT (under 15 words each). Return ONLY valid JSON, no extra text.
+
 {{
   "diagnoses": [
     {{
       "name": "Diagnosis Name",
-      "probability": "high|medium|low",
-      "supporting_evidence": ["evidence 1", "evidence 2"],
-      "against_evidence": ["counter 1"],
-      "suggested_tests": ["test 1", "test 2"]
+      "probability": "high",
+      "supporting_evidence": ["brief evidence 1", "brief evidence 2"],
+      "against_evidence": ["brief counter 1"],
+      "suggested_tests": ["test 1"]
     }}
   ]
 }}
