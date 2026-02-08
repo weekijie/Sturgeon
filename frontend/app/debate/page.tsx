@@ -29,15 +29,19 @@ interface Message {
 
 export default function DebatePage() {
   const router = useRouter();
-  const { caseData, addDebateRound, updateDifferential } = useCase();
+  const { caseData, addDebateRound, updateDifferential, setSessionId: persistSessionId } = useCase();
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isOrchestrated, setIsOrchestrated] = useState(false);
+  const [suggestedTest, setSuggestedTest] = useState<string | null>(null);
+  const [hasMounted, setHasMounted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Hydration guard: localStorage data isn't available during SSR
+  useEffect(() => setHasMounted(true), []);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -62,7 +66,16 @@ export default function DebatePage() {
       
       initMsg += ` Challenge my reasoning or ask about specific aspects of the differential.`;
       
-      setMessages([{ role: "ai", content: initMsg }]);
+      // Reconstruct messages from persisted debate rounds (survives page refresh)
+      const restoredMessages: Message[] = [{ role: "ai", content: initMsg }];
+      if (caseData.debateRounds.length > 0) {
+        for (const round of caseData.debateRounds) {
+          restoredMessages.push({ role: "user", content: round.user_challenge });
+          restoredMessages.push({ role: "ai", content: round.ai_response });
+        }
+      }
+      
+      setMessages(restoredMessages);
     } else {
       // No data, redirect back to upload
       router.push("/");
@@ -70,12 +83,8 @@ export default function DebatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-
-    const userMessage = input.trim();
+  const doSend = async (userMessage: string) => {
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
-    setInput("");
     setIsLoading(true);
 
     try {
@@ -88,7 +97,7 @@ export default function DebatePage() {
           current_differential: diagnoses,
           previous_rounds: caseData.debateRounds,
           user_challenge: userMessage,
-          session_id: sessionId,
+          session_id: caseData.sessionId,
           image_context: caseData.imageAnalysis?.triage_summary || null,
         }),
       });
@@ -109,9 +118,14 @@ export default function DebatePage() {
 
       // Track session and orchestration status
       if (data.session_id) {
-        setSessionId(data.session_id);
+        persistSessionId(data.session_id);
       }
       setIsOrchestrated(data.orchestrated || false);
+
+      // Track suggested test
+      if (data.suggested_test) {
+        setSuggestedTest(data.suggested_test);
+      }
 
       // Clean ai_response: strip any JSON wrapper artifacts
       let aiText: string = data.ai_response || "I need more information to respond.";
@@ -146,13 +160,26 @@ export default function DebatePage() {
     }
   };
 
+  const handleSend = () => {
+    if (!input.trim() || isLoading) return;
+    const userMessage = input.trim();
+    setInput("");
+    doSend(userMessage);
+  };
+
   const handleRetry = () => {
-    // Remove the last error message and retry with the last user message
-    const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
-    if (lastUserMsg) {
-      setMessages((prev) => prev.filter((_, i) => i !== prev.length - 1)); // remove error
-      setInput(lastUserMsg.content);
-    }
+    // Find the last user message, remove it + the error, then re-send
+    const reversed = [...messages].reverse();
+    const lastUserMsg = reversed.find(m => m.role === "user");
+    if (!lastUserMsg) return;
+    
+    const lastUserIdx = messages.length - 1 - reversed.indexOf(lastUserMsg);
+    // Remove from lastUserIdx onward (user msg + error msg)
+    const cleaned = messages.slice(0, lastUserIdx);
+    setMessages(cleaned);
+    
+    // Re-send after state update
+    setTimeout(() => doSend(lastUserMsg.content), 0);
   };
 
   const handleEndSession = () => {
@@ -190,7 +217,7 @@ export default function DebatePage() {
         {/* Left Panel - Differential Diagnoses */}
         <aside className="w-80 border-r border-border bg-surface p-4 overflow-y-auto h-[calc(100vh-52px-3px)] sticky top-[calc(52px+3px)]">
           {/* Uploaded Image Preview */}
-          {caseData.imagePreviewUrl && (
+          {hasMounted && caseData.imagePreviewUrl && (
             <div className="mb-4">
               <h2 className="text-xs font-bold text-muted uppercase tracking-widest mb-2 px-1">
                 Medical Image
@@ -216,7 +243,7 @@ export default function DebatePage() {
           )}
 
           {/* Lab Values */}
-          {caseData.labResults && Object.keys(caseData.labResults.lab_values).length > 0 && (
+          {hasMounted && caseData.labResults && Object.keys(caseData.labResults.lab_values).length > 0 && (
             <div className="mb-4">
               <h2 className="text-xs font-bold text-muted uppercase tracking-widest mb-2 px-1">
                 Lab Values
@@ -381,6 +408,13 @@ export default function DebatePage() {
 
           {/* Input */}
           <div className="border-t border-border p-4 bg-white">
+            {/* Suggested test banner */}
+            {suggestedTest && !isLoading && (
+              <div className="max-w-4xl mx-auto mb-3 px-3 py-2 bg-teal-light/40 border border-teal/20 rounded-lg flex items-center gap-2">
+                <span className="text-teal text-xs font-bold uppercase tracking-wider shrink-0">Suggested Test</span>
+                <span className="text-sm text-foreground">{suggestedTest}</span>
+              </div>
+            )}
             <div className="flex gap-3 max-w-4xl mx-auto">
               <Input
                 className="flex-1"

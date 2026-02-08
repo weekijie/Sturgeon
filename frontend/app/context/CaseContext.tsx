@@ -51,6 +51,7 @@ export interface CaseData {
   debateRounds: DebateRound[];
   imageAnalysis: ImageAnalysis | null;
   imagePreviewUrl: string | null; // data URL for image preview in debate
+  sessionId: string | null; // Gemini orchestrator session ID
 }
 
 interface CaseContextType {
@@ -62,6 +63,7 @@ interface CaseContextType {
   addDebateRound: (round: DebateRound) => void;
   updateDifferential: (diagnoses: Diagnosis[]) => void;
   setImageAnalysis: (analysis: ImageAnalysis, previewUrl: string) => void;
+  setSessionId: (id: string) => void;
   resetCase: () => void;
 }
 
@@ -75,6 +77,7 @@ const defaultCaseData: CaseData = {
   debateRounds: [],
   imageAnalysis: null,
   imagePreviewUrl: null,
+  sessionId: null,
 };
 
 const CaseContext = createContext<CaseContextType | null>(null);
@@ -151,6 +154,10 @@ export function CaseProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const setSessionId = (id: string) => {
+    setCaseDataAndPersist((prev) => ({ ...prev, sessionId: id }));
+  };
+
   const resetCase = () => {
     setCaseData(defaultCaseData);
     localStorage.removeItem(STORAGE_KEY);
@@ -167,6 +174,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         addDebateRound,
         updateDifferential,
         setImageAnalysis,
+        setSessionId,
         resetCase,
       }}
     >

@@ -53,6 +53,7 @@ class MedGemmaModel:
         max_new_tokens: int = 1024,
         system_prompt: str = None,
         image: Optional[Image.Image] = None,
+        temperature: float = 0.7,
     ) -> str:
         """Generate response from MedGemma using chat template.
         
@@ -101,8 +102,8 @@ class MedGemmaModel:
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=True,
-                temperature=0.7,
+                do_sample=temperature > 0.0,
+                temperature=temperature if temperature > 0.0 else 1.0,
                 top_p=0.9
             )
         

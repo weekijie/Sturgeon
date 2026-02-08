@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         // Not JSON — use raw text as-is
       }
       return NextResponse.json(
-        { error: "Backend error", details: errorMessage },
+        { error: "Backend error", detail: errorMessage },
         { status: response.status }
       );
     }

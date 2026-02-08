@@ -13,9 +13,16 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      const error = await response.text();
+      // Parse backend error — FastAPI returns { detail: "..." }
+      let detail = "Backend error";
+      try {
+        const errBody = await response.json();
+        detail = errBody.detail || JSON.stringify(errBody);
+      } catch {
+        detail = await response.text();
+      }
       return NextResponse.json(
-        { error: "Backend error", details: error },
+        { error: "Backend error", detail },
         { status: response.status }
       );
     }

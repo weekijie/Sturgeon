@@ -156,7 +156,7 @@ class GeminiOrchestrator:
                 "environment variable, or pass api_key to initialize()."
             )
         
-        self.client = genai.Client(api_key=key)
+        self.client = genai.Client(api_key=key, http_options={"timeout": 60000})
         logger.info(f"Gemini orchestrator initialized with model: {self._model_name}")
     
     def _query_medgemma(self, question: str, clinical_context: str) -> str:
@@ -186,7 +186,8 @@ Provide a focused, evidence-based analysis. Be specific about which findings sup
         response = self.medgemma.generate(
             full_prompt,
             system_prompt=system_prompt,
-            max_new_tokens=2048
+            max_new_tokens=2048,
+            temperature=0.4,
         )
         logger.info(f"MedGemma response: {len(response)} chars")
         return response
@@ -269,58 +270,6 @@ Provide a focused, evidence-based analysis. Be specific about which findings sup
             clinical_state.differential = result["updated_differential"]
         
         return result
-    
-    def generate_initial_analysis(self, clinical_state: ClinicalState) -> dict:
-        """Use MedGemma to generate the initial differential, with Gemini
-        providing a conversational framing.
-        
-        For the initial differential, MedGemma does the heavy lifting since
-        it's a single-turn medical reasoning task. Gemini just formats.
-        """
-        # MedGemma generates the raw differential
-        medgemma_prompt = f"""Based on the following case, generate 3-4 differential diagnoses.
-
-Patient History:
-{clinical_state.patient_history}
-
-Lab Values:
-{clinical_state.to_summary()}
-
-For each diagnosis, provide:
-1. Diagnosis name
-2. Probability (high/medium/low)  
-3. Supporting evidence from this case
-4. Evidence that argues against this diagnosis
-5. Tests that would help confirm or rule out
-
-Return as structured JSON with this format:
-{{
-  "diagnoses": [
-    {{
-      "name": "Diagnosis Name",
-      "probability": "high|medium|low",
-      "supporting_evidence": ["evidence 1", "evidence 2"],
-      "against_evidence": ["counter 1"],
-      "suggested_tests": ["test 1", "test 2"]
-    }}
-  ]
-}}
-
-JSON Response:"""
-        
-        system_prompt = (
-            "You are a diagnostic team member in a clinical case discussion. "
-            "Analyze clinical evidence carefully and generate differential diagnoses. "
-            "Always cite specific evidence from the case when making claims."
-        )
-        
-        response = self.medgemma.generate(
-            medgemma_prompt,
-            system_prompt=system_prompt,
-            max_new_tokens=2048
-        )
-        
-        return response  # Raw text, parsed by main.py's extract_json
     
     def _build_query_formulation_prompt(
         self,

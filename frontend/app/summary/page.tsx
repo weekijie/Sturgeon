@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, Button, Divider, Spinner } from "@heroui/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useCase } from "../context/CaseContext";
 import Prose from "../../components/Prose";
@@ -22,14 +22,20 @@ export default function SummaryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Fire once on mount — useRef guard prevents double-fire (React Strict Mode / caseData ref changes)
+  const didFetch = useRef(false);
   useEffect(() => {
-    const fetchSummary = async () => {
-      // If no data, redirect to home
-      if (!caseData.differential.length) {
-        router.push("/");
-        return;
-      }
+    if (didFetch.current) return;
 
+    // If no data, redirect to home
+    if (!caseData.differential.length) {
+      router.push("/");
+      return;
+    }
+
+    didFetch.current = true;
+
+    const fetchSummary = async () => {
       try {
         const response = await fetch("/api/summary", {
           method: "POST",
@@ -43,7 +49,15 @@ export default function SummaryPage() {
         });
 
         if (!response.ok) {
-          throw new Error("Failed to generate summary");
+          // Read actual error from backend
+          let errorDetail = "Failed to generate summary";
+          try {
+            const errBody = await response.json();
+            errorDetail = errBody.detail || errBody.error || errBody.message || errorDetail;
+          } catch {
+            // Response body wasn't JSON
+          }
+          throw new Error(errorDetail);
         }
 
         const data = await response.json();
@@ -56,7 +70,8 @@ export default function SummaryPage() {
     };
 
     fetchSummary();
-  }, [caseData, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleNewCase = () => {
     resetCase();

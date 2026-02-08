@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from typing import Optional
 from contextlib import asynccontextmanager
 from PIL import Image
+import asyncio
 import logging
 import json
 import re
@@ -401,7 +402,7 @@ async def extract_labs(request: ExtractLabsRequest):
     model = get_model()
     prompt = EXTRACT_LABS_PROMPT.format(lab_report_text=request.lab_report_text)
     
-    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=1024)
+    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=1024, temperature=0.3)
     data = extract_json(response)
     
     return ExtractLabsResponse(
@@ -476,7 +477,7 @@ async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
         # Send extracted text to MedGemma for structured lab parsing
         model = get_model()
         prompt = EXTRACT_LABS_PROMPT.format(lab_report_text=raw_text)
-        response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
+        response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048, temperature=0.3)
         
         # Try parsing; if JSON extraction fails, retry once (MedGemma can be
         # inconsistent with long inputs on first attempt)
@@ -484,7 +485,7 @@ async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
             data = extract_json(response)
         except HTTPException:
             logger.warning("Lab extraction JSON parse failed on first attempt, retrying...")
-            response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
+            response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048, temperature=0.3)
             data = extract_json(response)
         
         return ExtractLabsFileResponse(
@@ -515,7 +516,7 @@ async def generate_differential(request: DifferentialRequest):
         formatted_lab_values=formatted_labs
     )
     
-    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=3072)
+    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=3072, temperature=0.3)
     data = extract_json(response)
     
     diagnoses = []
@@ -564,7 +565,9 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
     clinical_state.differential = [d.model_dump() for d in request.current_differential]
     
     try:
-        result = orchestrator.process_debate_turn(
+        # Run synchronous orchestrator call in a thread to avoid blocking the event loop
+        result = await asyncio.to_thread(
+            orchestrator.process_debate_turn,
             user_challenge=request.user_challenge,
             clinical_state=clinical_state,
             previous_rounds=request.previous_rounds[-3:] if request.previous_rounds else None,
@@ -601,7 +604,12 @@ async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnRe
             user_challenge=request.user_challenge
         )
         
-        response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
+        # Run blocking MedGemma inference in a thread
+        response = await asyncio.to_thread(
+            model.generate, prompt,
+            max_new_tokens=2048,
+            system_prompt=SYSTEM_PROMPT,
+        )
         data = extract_json(response)
         
         # Parse updated differential with robust field name handling

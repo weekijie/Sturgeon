@@ -157,18 +157,18 @@ Sturgeon/
 - [x] Gemini + MedGemma agentic architecture (code complete)
 - [x] Add lab report file parsing (`/extract-labs-file`) — PDF/TXT upload, pdfplumber extraction, MedGemma structured parsing, lab values table UI
 - [x] Add session persistence (localStorage) — lazy `useState` initializer reads from localStorage, `setCaseDataAndPersist` wrapper writes on every state change, zero `useEffect`, SSR-safe
+- [x] Agentic flow code review — 12 fixes across backend + frontend (async blocking, error handling, session persistence, hydration, temperature parameterization, retry UX, dead code removal, Gemini timeout, global-error boundary)
 
 ### In Progress
 
-- [ ] Test full E2E agentic flow (Gemini orchestrator + MedGemma)
+- [ ] Verify hydration fix with clean dev server restart
 
 ### Next Steps (Priority Order)
 
-1. [ ] Test and validate agentic debate flow end-to-end
-2. [ ] Add medical image analysis (MedGemma multimodal -- chest X-ray, dermatology, pathology)
-3. [ ] Prepare demo cases
-6. [ ] RAG with clinical guidelines (stretch goal)
-7. [ ] Fine-tune MedGemma for debate (stretch goal)
+1. [ ] Add medical image analysis (MedGemma multimodal -- chest X-ray, dermatology, pathology)
+2. [ ] Prepare demo cases
+3. [ ] RAG with clinical guidelines (stretch goal)
+4. [ ] Fine-tune MedGemma for debate (stretch goal)
 
 ---
 
@@ -181,6 +181,7 @@ See `CHANGELOG.md` for all code changes.
 **Feb 7, 2026**: Gemini orchestrator implemented (`gemini_orchestrator.py`). Agentic debate flow with Gemini managing conversation + MedGemma as callable tool. Graceful fallback to MedGemma-only if no API key. New SDK: `google-genai`.
 **Feb 8, 2026**: Lab report file parsing feature complete. New `/extract-labs-file` endpoint (PDF via pdfplumber, TXT direct read, MedGemma structured parsing). Frontend: proxy route, CaseContext types, Upload page lab table UI (color-coded H/L/N), Debate page sidebar lab section. Bug fixes: button overflow, error message parsing (proxy JSON extraction + `errData.detail` fallback), MedGemma retry on JSON parse failure, max_new_tokens bumped to 2048.
 **Feb 8, 2026**: Session persistence via localStorage. Zero-`useEffect` approach: lazy `useState` initializer for read, `setCaseDataAndPersist` wrapper for write. SSR-safe, size guard (strips imagePreviewUrl on quota exceeded), clean reset via `localStorage.removeItem`.
+**Feb 8, 2026**: Agentic flow code review — 12 fixes. Backend: asyncio.to_thread for non-blocking inference, temperature parameterization (0.3 structured / 0.4 orchestrator / 0.7 debate), 60s Gemini timeout, dead code removal. Frontend: summary double-fire fix, error detail field consistency, sessionId persistence + chat reconstruction, suggested test banner, retry auto-resend, hydration mismatch fix, global-error.tsx for Next.js 16 Turbopack bug.
 
 ---
 
