@@ -10,3 +10,4 @@ python-dotenv>=1.0.0
 Pillow>=10.0.0
 protobuf>=3.20.0
 sentencepiece>=0.1.99
+pdfplumber>=0.11.0

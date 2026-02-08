@@ -120,6 +120,11 @@ class ExtractLabsResponse(BaseModel):
     lab_values: dict
     abnormal_values: list[str]
 
+class ExtractLabsFileResponse(BaseModel):
+    lab_values: dict
+    abnormal_values: list[str]
+    raw_text: str  # Extracted text from the file for transparency
+
 class DifferentialRequest(BaseModel):
     patient_history: str
     lab_values: dict
@@ -403,6 +408,99 @@ async def extract_labs(request: ExtractLabsRequest):
         lab_values=data.get("lab_values", {}),
         abnormal_values=data.get("abnormal_values", [])
     )
+
+
+@app.post("/extract-labs-file", response_model=ExtractLabsFileResponse)
+async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
+    """Extract structured lab values from an uploaded PDF or text file.
+    
+    Workflow:
+    1. Read uploaded file (PDF → pdfplumber, TXT → direct read)
+    2. Extract raw text (including tables for PDFs)
+    3. Send to MedGemma via EXTRACT_LABS_PROMPT for structured parsing
+    4. Return structured lab values + abnormal flags + raw text
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+    
+    filename = file.filename.lower()
+    raw_text = ""
+    
+    try:
+        contents = await file.read()
+        
+        if filename.endswith(".pdf"):
+            # Extract text from PDF using pdfplumber (handles tables well)
+            import pdfplumber
+            
+            pdf_bytes = io.BytesIO(contents)
+            with pdfplumber.open(pdf_bytes) as pdf:
+                pages_text = []
+                for page in pdf.pages:
+                    # Extract tables first (better for lab reports)
+                    tables = page.extract_tables()
+                    if tables:
+                        for table in tables:
+                            for row in table:
+                                # Filter None values and join
+                                cells = [str(c).strip() for c in row if c]
+                                if cells:
+                                    pages_text.append("  |  ".join(cells))
+                        pages_text.append("")  # Blank line between tables
+                    
+                    # Also extract regular text (for notes, headers, etc.)
+                    page_text = page.extract_text()
+                    if page_text:
+                        pages_text.append(page_text)
+                
+                raw_text = "\n".join(pages_text).strip()
+        
+        elif filename.endswith(".txt"):
+            # Direct text read
+            raw_text = contents.decode("utf-8", errors="replace").strip()
+        
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type: {filename}. Accepted: .pdf, .txt"
+            )
+        
+        if not raw_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not extract any text from the uploaded file"
+            )
+        
+        logger.info(f"Extracted {len(raw_text)} chars from {filename}")
+        
+        # Send extracted text to MedGemma for structured lab parsing
+        model = get_model()
+        prompt = EXTRACT_LABS_PROMPT.format(lab_report_text=raw_text)
+        response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
+        
+        # Try parsing; if JSON extraction fails, retry once (MedGemma can be
+        # inconsistent with long inputs on first attempt)
+        try:
+            data = extract_json(response)
+        except HTTPException:
+            logger.warning("Lab extraction JSON parse failed on first attempt, retrying...")
+            response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
+            data = extract_json(response)
+        
+        return ExtractLabsFileResponse(
+            lab_values=data.get("lab_values", {}),
+            abnormal_values=data.get("abnormal_values", []),
+            raw_text=raw_text[:5000]  # Cap at 5k chars for response size
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Lab extraction failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to extract lab values: {str(e)}"
+        )
 
 
 @app.post("/differential", response_model=DifferentialResponse)

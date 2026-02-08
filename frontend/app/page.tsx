@@ -2,13 +2,19 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Card, Button, Spinner, Chip } from "@heroui/react";
-import { useCase, ImageAnalysis } from "./context/CaseContext";
+import { Card, Button, Chip } from "@heroui/react";
+import { useCase, ImageAnalysis, LabResults } from "./context/CaseContext";
 import Prose from "../components/Prose";
 
 // Helper: is the file an image?
 function isImageFile(file: File): boolean {
   return file.type.startsWith("image/");
+}
+
+// Helper: is the file a lab report (PDF or text)?
+function isLabFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".pdf") || name.endsWith(".txt");
 }
 
 // Helper: read file as data URL for preview
@@ -52,7 +58,7 @@ function ExpandableText({ text, previewLength = 400 }: { text: string; previewLe
 
 export default function UploadPage() {
   const router = useRouter();
-  const { setPatientHistory, setDifferential, setImageAnalysis } = useCase();
+  const { setPatientHistory, setDifferential, setImageAnalysis, setLabResults } = useCase();
 
   const [file, setFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -61,6 +67,7 @@ export default function UploadPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string>("");
   const [imageResult, setImageResult] = useState<ImageAnalysis | null>(null);
+  const [labResult, setLabResult] = useState<LabResults | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -80,6 +87,7 @@ export default function UploadPage() {
     if (droppedFile) {
       setFile(droppedFile);
       setImageResult(null);
+      setLabResult(null);
       if (isImageFile(droppedFile)) {
         const url = await readAsDataUrl(droppedFile);
         setImagePreview(url);
@@ -95,6 +103,7 @@ export default function UploadPage() {
       if (selectedFile) {
         setFile(selectedFile);
         setImageResult(null);
+        setLabResult(null);
         if (isImageFile(selectedFile)) {
           const url = await readAsDataUrl(selectedFile);
           setImagePreview(url);
@@ -110,6 +119,7 @@ export default function UploadPage() {
     setFile(null);
     setImagePreview(null);
     setImageResult(null);
+    setLabResult(null);
   }, []);
 
   const handleAnalyze = async () => {
@@ -120,9 +130,10 @@ export default function UploadPage() {
 
     try {
       let imgAnalysis: ImageAnalysis | null = null;
+      let labExtraction: LabResults | null = null;
       let enrichedHistory = patientHistory;
 
-      // Step 1: If image file, analyze it first
+      // Step 1a: If image file, analyze it first
       if (file && isImageFile(file)) {
         setAnalysisStep("Analyzing image with MedSigLIP + MedGemma...");
 
@@ -163,6 +174,34 @@ export default function UploadPage() {
           : imageContext;
       }
 
+      // Step 1b: If lab report file (PDF/TXT), extract structured lab values
+      if (file && isLabFile(file)) {
+        setAnalysisStep("Extracting lab values with MedGemma...");
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const labResponse = await fetch("/api/extract-labs", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!labResponse.ok) {
+          const errData = await labResponse.json().catch(() => ({}));
+          throw new Error(
+            errData.detail || errData.details || errData.error || "Lab extraction failed",
+          );
+        }
+
+        labExtraction = await labResponse.json();
+        setLabResult(labExtraction);
+
+        // Store in context
+        if (labExtraction) {
+          setLabResults(labExtraction);
+        }
+      }
+
       // Step 2: Generate differential diagnosis
       setAnalysisStep("Generating differential diagnosis...");
 
@@ -171,7 +210,7 @@ export default function UploadPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patient_history: enrichedHistory,
-          lab_values: {},
+          lab_values: labExtraction?.lab_values ?? {},
         }),
       });
 
@@ -218,7 +257,7 @@ export default function UploadPage() {
           <div className="p-6 pb-0">
             <h2 className="text-xl font-semibold text-foreground">Upload Evidence</h2>
             <p className="text-muted text-sm mt-1">
-              Upload medical images (X-ray, dermatology, pathology) or provide
+              Upload medical images, lab reports (PDF/TXT), or provide
               patient history
             </p>
           </div>
@@ -271,6 +310,11 @@ export default function UploadPage() {
                         Medical Image
                       </Chip>
                     )}
+                    {isLabFile(file) && (
+                      <Chip size="sm" variant="flat" color="primary">
+                        Lab Report
+                      </Chip>
+                    )}
                   </div>
                   <button
                     onClick={(e) => {
@@ -291,11 +335,10 @@ export default function UploadPage() {
                     </svg>
                   </div>
                   <p className="font-medium text-foreground">
-                    Drop medical image or report here
+                    Drop medical image or lab report here
                   </p>
                   <p className="text-sm text-muted">
-                    Chest X-ray, dermatology photo, pathology slide, or text
-                    report
+                    X-ray, dermatology, pathology, PDF lab report, or text file
                   </p>
                 </div>
               )}
@@ -337,11 +380,95 @@ export default function UploadPage() {
               </div>
             )}
 
+            {/* Lab Extraction Results */}
+            {labResult && labResult.lab_values && Object.keys(labResult.lab_values).length > 0 && (
+              <div className="rounded-xl border border-border bg-white p-4 space-y-3 border-l-4 border-l-teal">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm text-foreground">
+                    Extracted Lab Values
+                  </h3>
+                  {labResult.abnormal_values.length > 0 && (
+                    <Chip size="sm" variant="flat" color="danger">
+                      {labResult.abnormal_values.length} abnormal
+                    </Chip>
+                  )}
+                </div>
+
+                {/* Lab Values Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-1.5 pr-3 font-semibold text-muted">Test</th>
+                        <th className="text-left py-1.5 pr-3 font-semibold text-muted">Value</th>
+                        <th className="text-left py-1.5 pr-3 font-semibold text-muted">Unit</th>
+                        <th className="text-left py-1.5 pr-3 font-semibold text-muted">Reference</th>
+                        <th className="text-left py-1.5 font-semibold text-muted">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(labResult.lab_values).map(([testName, details]) => {
+                        const lab = details as { value?: number | string; unit?: string; reference?: string; status?: string };
+                        const isAbnormal = lab.status === "high" || lab.status === "low";
+                        return (
+                          <tr
+                            key={testName}
+                            className={`border-b border-border/50 ${isAbnormal ? "bg-red-50/50" : ""}`}
+                          >
+                            <td className={`py-1.5 pr-3 font-medium ${isAbnormal ? "text-danger" : "text-foreground"}`}>
+                              {testName}
+                            </td>
+                            <td className={`py-1.5 pr-3 ${isAbnormal ? "text-danger font-semibold" : "text-foreground"}`}>
+                              {lab.value ?? "—"}
+                            </td>
+                            <td className="py-1.5 pr-3 text-muted">{lab.unit ?? "—"}</td>
+                            <td className="py-1.5 pr-3 text-muted">{lab.reference ?? "—"}</td>
+                            <td className="py-1.5">
+                              {lab.status && (
+                                <Chip
+                                  size="sm"
+                                  variant="flat"
+                                  color={
+                                    lab.status === "high" ? "danger"
+                                    : lab.status === "low" ? "warning"
+                                    : "success"
+                                  }
+                                >
+                                  {lab.status === "high" ? "H" : lab.status === "low" ? "L" : "N"}
+                                </Chip>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Abnormal Values Summary */}
+                {labResult.abnormal_values.length > 0 && (
+                  <>
+                    <div className="border-t border-border" />
+                    <div>
+                      <p className="text-xs text-muted mb-1.5">Flagged Abnormal:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {labResult.abnormal_values.map((name, i) => (
+                          <Chip key={i} size="sm" variant="flat" color="danger">
+                            {name}
+                          </Chip>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Patient History */}
             <div className="space-y-2">
               <label htmlFor="patient-history" className="text-sm font-medium text-foreground">
                 Patient History{" "}
-                {file && isImageFile(file)
+                {file && (isImageFile(file) || isLabFile(file))
                   ? "(Optional — enhances analysis)"
                   : "(Required)"}
               </label>
@@ -369,16 +496,9 @@ export default function UploadPage() {
               variant="solid"
               onPress={handleAnalyze}
               isDisabled={(!file && !patientHistory.trim()) || isAnalyzing}
-              className="min-w-[200px] font-semibold bg-teal text-white hover:bg-teal/90 rounded-lg px-6 py-2.5 text-sm transition-colors"
+              className={`min-w-[200px] font-semibold bg-teal text-white hover:bg-teal/90 rounded-lg px-6 py-2.5 text-sm transition-colors ${isAnalyzing ? "animate-pulse" : ""}`}
             >
-              {isAnalyzing ? (
-                <>
-                  <Spinner size="sm" color="white" />
-                  Analyzing...
-                </>
-              ) : (
-                "Analyze & Begin Debate"
-              )}
+              {isAnalyzing ? "Analyzing..." : "Analyze & Begin Debate"}
             </Button>
             {isAnalyzing && analysisStep && (
               <p className="text-xs text-muted">{analysisStep}</p>

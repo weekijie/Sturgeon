@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Card, Button, Input } from "@heroui/react";
+import { Card, Button, Input, Chip } from "@heroui/react";
 import { useCase, Diagnosis } from "../context/CaseContext";
 import Prose from "../../components/Prose";
 
@@ -215,6 +215,55 @@ export default function DebatePage() {
             </div>
           )}
 
+          {/* Lab Values */}
+          {caseData.labResults && Object.keys(caseData.labResults.lab_values).length > 0 && (
+            <div className="mb-4">
+              <h2 className="text-xs font-bold text-muted uppercase tracking-widest mb-2 px-1">
+                Lab Values
+                {caseData.labResults.abnormal_values.length > 0 && (
+                  <span className="ml-2 text-danger font-semibold normal-case tracking-normal">
+                    ({caseData.labResults.abnormal_values.length} abnormal)
+                  </span>
+                )}
+              </h2>
+              <div className="rounded-lg border border-border bg-white p-2.5 space-y-1">
+                {Object.entries(caseData.labResults.lab_values).map(([testName, details]) => {
+                  const lab = details as { value?: number | string; unit?: string; reference?: string; status?: string };
+                  const isAbnormal = lab.status === "high" || lab.status === "low";
+                  return (
+                    <div
+                      key={testName}
+                      className={`flex items-center justify-between py-1 px-1.5 rounded text-xs ${isAbnormal ? "bg-red-50/70" : ""}`}
+                    >
+                      <span className={`font-medium truncate mr-2 ${isAbnormal ? "text-danger" : "text-foreground"}`}>
+                        {testName}
+                      </span>
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        <span className={isAbnormal ? "text-danger font-semibold" : "text-muted"}>
+                          {lab.value ?? "—"} {lab.unit ?? ""}
+                        </span>
+                        {lab.status && (
+                          <Chip
+                            size="sm"
+                            variant="flat"
+                            color={
+                              lab.status === "high" ? "danger"
+                              : lab.status === "low" ? "warning"
+                              : "success"
+                            }
+                            className="min-w-[20px] h-4 text-[9px]"
+                          >
+                            {lab.status === "high" ? "H" : lab.status === "low" ? "L" : "N"}
+                          </Chip>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <h2 className="text-xs font-bold text-muted uppercase tracking-widest mb-4 px-1">
             Differential Diagnoses
           </h2>
@@ -345,7 +394,7 @@ export default function DebatePage() {
                 variant="solid" 
                 onPress={handleSend} 
                 isDisabled={isLoading || !input.trim()}
-                className="bg-teal text-white hover:bg-teal/90 font-semibold px-6"
+                className="bg-teal text-white hover:bg-teal/90 font-semibold px-6 rounded-lg"
               >
                 Send &rarr;
               </Button>

@@ -86,7 +86,7 @@ export default function SummaryPage() {
       <main className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center space-y-4">
           <Spinner size="lg" />
-          <p className="text-muted">MedGemma is generating your diagnostic summary...</p>
+          <p className="text-muted animate-pulse">MedGemma is generating your diagnostic summary...</p>
         </div>
       </main>
     );

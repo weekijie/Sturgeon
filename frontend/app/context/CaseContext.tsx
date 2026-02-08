@@ -30,9 +30,23 @@ export interface ImageAnalysis {
   medgemma_analysis: string;
 }
 
+export interface LabValue {
+  value: number | string;
+  unit: string;
+  reference: string;
+  status: "normal" | "high" | "low";
+}
+
+export interface LabResults {
+  lab_values: Record<string, LabValue>;
+  abnormal_values: string[];
+  raw_text?: string;
+}
+
 export interface CaseData {
   patientHistory: string;
   labValues: Record<string, unknown>;
+  labResults: LabResults | null; // Structured lab extraction results
   differential: Diagnosis[];
   debateRounds: DebateRound[];
   imageAnalysis: ImageAnalysis | null;
@@ -43,6 +57,7 @@ interface CaseContextType {
   caseData: CaseData;
   setPatientHistory: (history: string) => void;
   setLabValues: (labs: Record<string, unknown>) => void;
+  setLabResults: (results: LabResults) => void;
   setDifferential: (diagnoses: Diagnosis[]) => void;
   addDebateRound: (round: DebateRound) => void;
   updateDifferential: (diagnoses: Diagnosis[]) => void;
@@ -53,6 +68,7 @@ interface CaseContextType {
 const defaultCaseData: CaseData = {
   patientHistory: "",
   labValues: {},
+  labResults: null,
   differential: [],
   debateRounds: [],
   imageAnalysis: null,
@@ -70,6 +86,14 @@ export function CaseProvider({ children }: { children: ReactNode }) {
 
   const setLabValues = (labs: Record<string, unknown>) => {
     setCaseData((prev) => ({ ...prev, labValues: labs }));
+  };
+
+  const setLabResults = (results: LabResults) => {
+    setCaseData((prev) => ({
+      ...prev,
+      labResults: results,
+      labValues: results.lab_values, // Keep labValues in sync
+    }));
   };
 
   const setDifferential = (diagnoses: Diagnosis[]) => {
@@ -105,6 +129,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
         caseData,
         setPatientHistory,
         setLabValues,
+        setLabResults,
         setDifferential,
         addDebateRound,
         updateDifferential,
