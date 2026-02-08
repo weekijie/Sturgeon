@@ -65,6 +65,8 @@ interface CaseContextType {
   resetCase: () => void;
 }
 
+const STORAGE_KEY = "sturgeon-case";
+
 const defaultCaseData: CaseData = {
   patientHistory: "",
   labValues: {},
@@ -78,18 +80,48 @@ const defaultCaseData: CaseData = {
 const CaseContext = createContext<CaseContextType | null>(null);
 
 export function CaseProvider({ children }: { children: ReactNode }) {
-  const [caseData, setCaseData] = useState<CaseData>(defaultCaseData);
+  const [caseData, setCaseData] = useState<CaseData>(() => {
+    if (typeof window === "undefined") return defaultCaseData;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : defaultCaseData;
+    } catch {
+      return defaultCaseData;
+    }
+  });
+
+  // Wrapper: update state and persist to localStorage in one step.
+  // No useEffect needed — writes happen synchronously during state update.
+  const setCaseDataAndPersist = (
+    updater: CaseData | ((prev: CaseData) => CaseData),
+  ) => {
+    setCaseData((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Quota exceeded — retry without base64 image preview
+        try {
+          const slim = { ...next, imagePreviewUrl: null };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(slim));
+        } catch {
+          // Still too large — fail silently
+        }
+      }
+      return next;
+    });
+  };
 
   const setPatientHistory = (history: string) => {
-    setCaseData((prev) => ({ ...prev, patientHistory: history }));
+    setCaseDataAndPersist((prev) => ({ ...prev, patientHistory: history }));
   };
 
   const setLabValues = (labs: Record<string, unknown>) => {
-    setCaseData((prev) => ({ ...prev, labValues: labs }));
+    setCaseDataAndPersist((prev) => ({ ...prev, labValues: labs }));
   };
 
   const setLabResults = (results: LabResults) => {
-    setCaseData((prev) => ({
+    setCaseDataAndPersist((prev) => ({
       ...prev,
       labResults: results,
       labValues: results.lab_values, // Keep labValues in sync
@@ -97,22 +129,22 @@ export function CaseProvider({ children }: { children: ReactNode }) {
   };
 
   const setDifferential = (diagnoses: Diagnosis[]) => {
-    setCaseData((prev) => ({ ...prev, differential: diagnoses }));
+    setCaseDataAndPersist((prev) => ({ ...prev, differential: diagnoses }));
   };
 
   const addDebateRound = (round: DebateRound) => {
-    setCaseData((prev) => ({
+    setCaseDataAndPersist((prev) => ({
       ...prev,
       debateRounds: [...prev.debateRounds, round],
     }));
   };
 
   const updateDifferential = (diagnoses: Diagnosis[]) => {
-    setCaseData((prev) => ({ ...prev, differential: diagnoses }));
+    setCaseDataAndPersist((prev) => ({ ...prev, differential: diagnoses }));
   };
 
   const setImageAnalysis = (analysis: ImageAnalysis, previewUrl: string) => {
-    setCaseData((prev) => ({
+    setCaseDataAndPersist((prev) => ({
       ...prev,
       imageAnalysis: analysis,
       imagePreviewUrl: previewUrl,
@@ -121,6 +153,7 @@ export function CaseProvider({ children }: { children: ReactNode }) {
 
   const resetCase = () => {
     setCaseData(defaultCaseData);
+    localStorage.removeItem(STORAGE_KEY);
   };
 
   return (
