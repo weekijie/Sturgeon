@@ -260,6 +260,11 @@ def extract_json(text: str) -> dict:
         logger.error(f"No JSON object found in response: {text[:200]}...")
         raise HTTPException(status_code=500, detail="Model response contained no JSON")
     
+    # Pre-process: escape literal newlines inside JSON string values.
+    # MedGemma often wraps long strings across lines, which is invalid JSON.
+    # Replace newlines that appear between non-structural quotes with \n.
+    text = re.sub(r'(?<=\w)\s*\n\s*(?=\w)', ' ', text)
+    
     # Attempt 1: direct parse
     try:
         return json.loads(text)
@@ -326,6 +331,13 @@ def strip_disclaimers(text: str) -> str:
         r"(?:^|\n)\s*(?:This|The following) is not (?:intended as )?medical advice[^.]*\.\s*",
         r"(?:^|\n)\s*(?:It is (?:essential|important) to |Please |Always )?consult (?:with )?(?:a |your )?(?:qualified )?(?:healthcare|medical) (?:professional|provider|doctor)[^.]*\.\s*",
         r"(?:^|\n)\s*(?:I cannot|I can't) (?:provide|give|offer) medical (?:advice|diagnosis|treatment)[^.]*\.\s*",
+        r"(?:^|\n)\s*(?:I am unable|I'm unable) to provide (?:a )?(?:medical )?(?:diagnosis|interpretation|clinical interpretation)[^.]*\.\s*",
+        # "This is because I am an AI..." / "Analyzing medical images requires..."
+        r"(?:^|\n)\s*This is because I (?:am|'m) an AI[^.]*\.\s*",
+        r"(?:^|\n)\s*Analyzing medical images requires[^.]*\.\s*",
+        # "If you have a medical image..." / "They can properly interpret..."
+        r"(?:^|\n)\s*If you have a medical image[^.]*\.\s*",
+        r"(?:^|\n)\s*They can properly[^.]*\.\s*",
         # Match **Disclaimer** or Disclaimer blocks (may span multiple sentences to end of text)
         r"(?:^|\n)\s*\*{0,2}Disclaimer\*{0,2}:?\s*.*",
         r"(?:^|\n)\s*(?:Important|Note):?\s*(?:I am|I'm|This is) (?:not |an )?(?:AI|a substitute)[^.]*\.\s*",
@@ -339,6 +351,12 @@ def strip_disclaimers(text: str) -> str:
     
     # Clean up excess whitespace
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+    
+    # If stripping removed too much, the model refused to analyze —
+    # return a helpful fallback instead of raw disclaimer text.
+    if len(cleaned) < 50:
+        return "The model could not generate a detailed interpretation for this image. Clinical analysis will proceed based on patient history and other available data."
+    
     return cleaned
 
 
@@ -712,8 +730,30 @@ async def analyze_image(file: UploadFile = FastAPIFile(...)):
     
     # Step 2: MedGemma deep analysis (multimodal — image + text context)
     model = get_model()
+    modality = triage_result.get("modality", "unknown")
     
-    medgemma_prompt = f"""Analyze this medical image in detail.
+    # Adapt prompt based on triage confidence: when MedSigLIP is uncertain,
+    # don't feed it misleading triage labels — let MedGemma figure it out.
+    if modality == "uncertain":
+        medgemma_prompt = """Analyze this medical image in detail.
+
+First, identify the imaging modality (e.g., chest X-ray, dermatology/skin photograph, histopathology slide, CT scan, MRI, etc.).
+
+Then provide a thorough clinical interpretation including:
+1. **Image type and quality**: What type of medical image is this? Is the quality adequate for interpretation?
+2. **Key findings**: Describe all significant findings, both normal and abnormal.
+3. **Clinical significance**: What do these findings suggest clinically?
+4. **Differential considerations**: What conditions should be considered based on these findings?
+5. **Recommended follow-up**: What additional imaging or tests would help clarify the findings?
+
+Be specific and cite visible features in the image."""
+        system_prompt = (
+            "You are a medical imaging specialist experienced in radiology, "
+            "dermatology, and pathology. Analyze medical images with precision, "
+            "citing specific visual findings. Be thorough but concise."
+        )
+    else:
+        medgemma_prompt = f"""Analyze this medical image in detail.
 
 {triage_summary}
 
@@ -725,17 +765,19 @@ Provide a thorough clinical interpretation including:
 5. **Recommended follow-up**: What additional imaging or tests would help clarify the findings?
 
 Be specific and cite visible features in the image."""
+        system_prompt = (
+            "You are a specialist radiologist and medical imaging expert. "
+            "Analyze medical images with precision, citing specific visual "
+            "findings. Be thorough but concise."
+        )
     
     try:
         medgemma_analysis = model.generate(
             medgemma_prompt,
-            system_prompt=(
-                "You are a specialist radiologist and medical imaging expert. "
-                "Analyze medical images with precision, citing specific visual "
-                "findings. Be thorough but concise."
-            ),
+            system_prompt=system_prompt,
             image=image,
             max_new_tokens=2048,
+            temperature=0.1,
         )
         logger.info(f"MedGemma analysis: {len(medgemma_analysis)} chars")
     except Exception as e:

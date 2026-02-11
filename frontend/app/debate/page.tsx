@@ -61,7 +61,11 @@ export default function DebatePage() {
       let initMsg = `Based on the ${hasImage ? "uploaded medical image and " : ""}patient history, I've identified ${caseData.differential.length} potential diagnoses. The primary concern is **${primaryDx}**.`;
       
       if (hasImage && caseData.imageAnalysis) {
-        initMsg += ` The ${caseData.imageAnalysis.image_type} (${caseData.imageAnalysis.modality}) has been analyzed using MedSigLIP triage and MedGemma interpretation.`;
+        if (caseData.imageAnalysis.modality === "uncertain") {
+          initMsg += ` The uploaded medical image has been analyzed using MedGemma interpretation.`;
+        } else {
+          initMsg += ` The ${caseData.imageAnalysis.image_type} (${caseData.imageAnalysis.modality}) has been analyzed using MedSigLIP triage and MedGemma interpretation.`;
+        }
       }
       
       initMsg += ` Challenge my reasoning or ask about specific aspects of the differential.`;
@@ -232,10 +236,14 @@ export default function DebatePage() {
               {caseData.imageAnalysis && (
                 <div className="mt-2 px-1">
                   <p className="text-[10px] text-teal font-medium uppercase tracking-wider">
-                    {caseData.imageAnalysis.image_type}
+                    {caseData.imageAnalysis.modality === "uncertain"
+                      ? "Medical Image"
+                      : caseData.imageAnalysis.image_type}
                   </p>
                   <p className="text-[10px] text-muted">
-                    {caseData.imageAnalysis.modality} — {(caseData.imageAnalysis.image_type_confidence * 100).toFixed(0)}% confidence
+                    {caseData.imageAnalysis.modality === "uncertain"
+                      ? "MedGemma direct analysis"
+                      : `${caseData.imageAnalysis.modality} — ${(caseData.imageAnalysis.image_type_confidence * 100).toFixed(0)}% confidence`}
                   </p>
                 </div>
               )}

@@ -16,17 +16,23 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Confidence threshold: below this, MedSigLIP triage is unreliable and
+# MedGemma should determine the imaging modality directly.
+IMAGE_TYPE_CONFIDENCE_THRESHOLD = 0.25
+
 # Predefined label sets for common medical image types
+# Labels are intentionally descriptive and contrastive for zero-shot accuracy.
+# See model card: https://developers.google.com/health-ai-developer-foundations/medsiglip/model-card
 MEDICAL_IMAGE_LABELS = {
     "image_type": [
-        "a chest X-ray radiograph",
-        "a dermatology photograph of skin",
-        "a histopathology microscopy slide",
-        "a CT scan slice",
-        "an MRI scan slice",
-        "an ophthalmology fundus photograph",
-        "a clinical photograph",
-        "a lab report document",
+        "a chest x-ray radiograph showing lungs and heart",
+        "a close-up photograph of a skin lesion or rash on a human body",
+        "a histopathology microscopy image of stained tissue on a glass slide",
+        "a CT scan cross-section of the body",
+        "an MRI scan slice of the brain or body",
+        "a retinal fundus photograph of the eye",
+        "a clinical photograph of a patient",
+        "a scanned document or printed medical report with text",
     ],
     "chest_xray_findings": [
         "normal chest X-ray with no abnormalities",
@@ -165,14 +171,34 @@ class MedSigLIPModel:
         else:
             type_confidence = 1.0
 
-        # Step 2: Pick the right label set
+        # Step 2: Check confidence — if too low, MedSigLIP can't reliably
+        # classify this image (e.g. watermarked derm photos, unusual formats).
+        # Fall back to MedGemma for modality detection.
+        if type_confidence < IMAGE_TYPE_CONFIDENCE_THRESHOLD:
+            logger.info(
+                f"Low confidence ({type_confidence:.1%}) for image type "
+                f"'{image_type}'. Falling back to MedGemma direct analysis."
+            )
+            return {
+                "image_type": image_type,
+                "image_type_confidence": type_confidence,
+                "modality": "uncertain",
+                "findings": [],
+                "triage_summary": (
+                    "MedSigLIP confidence is low for this image. "
+                    "MedGemma will determine the imaging modality and "
+                    "provide direct clinical interpretation."
+                ),
+            }
+
+        # Step 3: Pick the right label set based on identified image type
         if "chest" in image_type.lower() or "x-ray" in image_type.lower() or "radiograph" in image_type.lower():
             finding_labels = MEDICAL_IMAGE_LABELS["chest_xray_findings"]
             modality = "chest_xray"
-        elif "dermatol" in image_type.lower() or "skin" in image_type.lower():
+        elif "skin" in image_type.lower() or "lesion" in image_type.lower() or "rash" in image_type.lower():
             finding_labels = MEDICAL_IMAGE_LABELS["dermatology_findings"]
             modality = "dermatology"
-        elif "pathol" in image_type.lower() or "histopathol" in image_type.lower() or "microscop" in image_type.lower():
+        elif "pathol" in image_type.lower() or "histopathol" in image_type.lower() or "microscop" in image_type.lower() or "stained" in image_type.lower():
             finding_labels = MEDICAL_IMAGE_LABELS["pathology_findings"]
             modality = "pathology"
         else:
@@ -181,10 +207,10 @@ class MedSigLIPModel:
             finding_labels = MEDICAL_IMAGE_LABELS["chest_xray_findings"]
             modality = "general"
 
-        # Step 3: Classify findings
+        # Step 4: Classify findings
         findings = self.classify(image, finding_labels, top_k=5)
 
-        # Step 4: Build triage summary for MedGemma context
+        # Step 5: Build triage summary for MedGemma context
         top_findings = [f for f in findings if f["score"] > 0.05]
         summary_lines = [
             f"MedSigLIP Image Triage (modality: {modality}):",

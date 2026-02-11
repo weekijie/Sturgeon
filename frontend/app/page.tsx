@@ -347,8 +347,8 @@ export default function UploadPage() {
             {/* Image Analysis Results */}
             {imageResult && (
               <div className="rounded-xl border border-border bg-white p-4 space-y-3 border-l-4 border-l-teal">
-                {/* Section: MedSigLIP Triage */}
-                {imageResult.triage_findings.length > 0 && (
+                {/* Section: MedSigLIP Triage (hidden when uncertain) */}
+                {imageResult.modality !== "uncertain" && imageResult.triage_findings.length > 0 && (
                   <div>
                     <h3 className="font-semibold text-sm text-foreground mb-2">Image Analysis</h3>
                     <p className="text-xs text-muted mb-1.5">MedSigLIP Triage Findings:</p>
@@ -367,8 +367,16 @@ export default function UploadPage() {
                   </div>
                 )}
 
+                {/* MedGemma direct analysis badge (shown when triage was uncertain) */}
+                {imageResult.modality === "uncertain" && (
+                  <div>
+                    <h3 className="font-semibold text-sm text-foreground mb-2">Image Analysis</h3>
+                    <p className="text-xs text-muted">Image type auto-detected by MedGemma</p>
+                  </div>
+                )}
+
                 {/* Divider */}
-                {imageResult.triage_findings.length > 0 && (
+                {(imageResult.modality === "uncertain" || imageResult.triage_findings.length > 0) && (
                   <div className="border-t border-border" />
                 )}
 

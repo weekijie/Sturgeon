@@ -19,13 +19,13 @@
 
 ## Tech Stack
 
-| Layer         | Technology                                                 | Role                          |
-| ------------- | ---------------------------------------------------------- | ----------------------------- |
-| Frontend      | Next.js 14 (App Router) + **HeroUI v3**                    | UI + API routes               |
-| Backend       | Python FastAPI                                             | Orchestration + inference     |
-| Medical AI    | **MedGemma 4B-it** (bfloat16, via AutoModelForImageTextToText) | Medical reasoning, image analysis, differential diagnosis |
-| Orchestrator  | **Gemini Pro/Flash** (Google AI API)                        | Conversation management, context summarization, debate flow |
-| Hosting       | Vercel (frontend) + local/Kaggle (AI)                      | Free deployment               |
+| Layer        | Technology                                                     | Role                                                        |
+| ------------ | -------------------------------------------------------------- | ----------------------------------------------------------- |
+| Frontend     | Next.js 14 (App Router) + **HeroUI v3**                        | UI + API routes                                             |
+| Backend      | Python FastAPI                                                 | Orchestration + inference                                   |
+| Medical AI   | **MedGemma 4B-it** (bfloat16, via AutoModelForImageTextToText) | Medical reasoning, image analysis, differential diagnosis   |
+| Orchestrator | **Gemini Pro/Flash** (Google AI API)                           | Conversation management, context summarization, debate flow |
+| Hosting      | Vercel (frontend) + local/Kaggle (AI)                          | Free deployment                                             |
 
 > **Note**: Tailwind v4 uses `@theme` syntax which may trigger "Unknown at rule" warnings in IDEs. These are false positives.
 
@@ -34,6 +34,7 @@
 **Always load the `heroui-react` agent skill before making frontend UI changes.** This ensures correct v3 patterns are used.
 
 Key v3 rules:
+
 - **No Provider needed** (unlike v2 — do NOT add `HeroUIProvider`)
 - **Compound components**: `<Card><Card.Header>...</Card.Header></Card>` (not flat props)
 - **Use `onPress` not `onClick`** for Button/interactive components
@@ -121,13 +122,13 @@ Sturgeon/
 
 ## Critical Constraints
 
-| Constraint       | Details                                                   |
-| ---------------- | --------------------------------------------------------- |
-| HAI-DEF Required | Must use MedGemma (Gemini allowed as orchestrator)        |
-| Hardware         | AMD RX 9060 XT (16GB) → Use bfloat16                     |
-| Deadline         | February 24, 2026 (ahead of schedule with AI assistance)  |
-| MedGemma API     | Use `AutoModelForImageTextToText` + `AutoProcessor`       |
-| AMD GPU          | Set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`           |
+| Constraint       | Details                                                      |
+| ---------------- | ------------------------------------------------------------ |
+| HAI-DEF Required | Must use MedGemma (Gemini allowed as orchestrator)           |
+| Hardware         | AMD RX 9060 XT (16GB) → Use bfloat16                         |
+| Deadline         | February 24, 2026 (ahead of schedule with AI assistance)     |
+| MedGemma API     | Use `AutoModelForImageTextToText` + `AutoProcessor`          |
+| AMD GPU          | Set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`              |
 | Gemini API       | Paid key available. Free tier also works for reproducibility |
 
 ---
@@ -161,11 +162,11 @@ Sturgeon/
 
 ### In Progress
 
-- [ ] Verify hydration fix with clean dev server restart
+- [ ] Verify MedSigLIP triage fixes: X-ray regression, summary JSON, temperature 0.1 consistency
 
 ### Next Steps (Priority Order)
 
-1. [ ] Add medical image analysis (MedGemma multimodal -- chest X-ray, dermatology, pathology)
+1. [ ] Complete verification of image triage improvements
 2. [ ] Prepare demo cases
 3. [ ] RAG with clinical guidelines (stretch goal)
 4. [ ] Fine-tune MedGemma for debate (stretch goal)
@@ -182,6 +183,7 @@ See `CHANGELOG.md` for all code changes.
 **Feb 8, 2026**: Lab report file parsing feature complete. New `/extract-labs-file` endpoint (PDF via pdfplumber, TXT direct read, MedGemma structured parsing). Frontend: proxy route, CaseContext types, Upload page lab table UI (color-coded H/L/N), Debate page sidebar lab section. Bug fixes: button overflow, error message parsing (proxy JSON extraction + `errData.detail` fallback), MedGemma retry on JSON parse failure, max_new_tokens bumped to 2048.
 **Feb 8, 2026**: Session persistence via localStorage. Zero-`useEffect` approach: lazy `useState` initializer for read, `setCaseDataAndPersist` wrapper for write. SSR-safe, size guard (strips imagePreviewUrl on quota exceeded), clean reset via `localStorage.removeItem`.
 **Feb 8, 2026**: Agentic flow code review — 12 fixes. Backend: asyncio.to_thread for non-blocking inference, temperature parameterization (0.3 structured / 0.4 orchestrator / 0.7 debate), 60s Gemini timeout, dead code removal. Frontend: summary double-fire fix, error detail field consistency, sessionId persistence + chat reconstruction, suggested test banner, retry auto-resend, hydration mismatch fix, global-error.tsx for Next.js 16 Turbopack bug.
+**Feb 12, 2026**: MedSigLIP triage accuracy improvement. Label engineering (8 zero-shot labels), confidence threshold fallback (modality="uncertain"), adaptive MedGemma prompt, disclaimer stripping, JSON newline repair, image analysis temp=0.1.
 
 ---
 

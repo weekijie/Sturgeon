@@ -278,6 +278,65 @@ Complete visual overhaul from dark glassmorphism to a clean, clinical light them
 
 ---
 
+## [2026-02-12] Session 10 — MedSigLIP Triage Accuracy & Robustness
+
+### Problem
+
+MedSigLIP misclassified non-radiology images (e.g., `derm-melanoma.jpg` → "lab report document" at 28.5%) due to vague zero-shot labels and watermarks/logos confusing classification. MedGemma then refused to analyze the image because the triage told it the image was a document.
+
+### Changed
+
+- `ai-service/medsiglip.py` — **Label engineering + confidence fallback**:
+  - Rewrote all 8 `image_type` zero-shot labels to be more descriptive and contrastive (e.g., `"a close-up photograph of a skin lesion or rash on a human body"` instead of `"a dermatology photograph of skin"`)
+  - Added `IMAGE_TYPE_CONFIDENCE_THRESHOLD = 0.25` constant
+  - When confidence < 25%, returns `modality="uncertain"` and skips misleading finding-specific classification. MedGemma then determines the imaging modality directly.
+  - Updated modality routing keywords to match new labels (e.g., `"rash"`, `"stained"`)
+
+- `ai-service/main.py` — **Adaptive MedGemma prompt + robustness fixes**:
+  - When `modality == "uncertain"`: uses generic multi-modality prompt asking MedGemma to first identify the imaging type, then analyze. System prompt broadened from "specialist radiologist" to "medical imaging specialist experienced in radiology, dermatology, and pathology"
+  - When modality is known: keeps original behavior unchanged
+  - **Image analysis temperature**: Set to `0.1` (was default 0.7). Google used `0.0` for MedGemma benchmarks; `0.1` is nearly deterministic while avoiding greedy decoding edge cases. Prevents the same image randomly producing a thorough analysis vs a refusal.
+  - **Disclaimer stripping**: Added 4 new patterns for MedGemma refusal phrases (`"This is because I am an AI..."`, `"Analyzing medical images requires..."`, `"If you have a medical image..."`, `"I am unable to provide a medical diagnosis..."`). When all content is disclaimers, returns helpful fallback message instead of raw refusal text.
+  - **JSON newline fix**: Added pre-processing in `extract_json()` to join literal newlines inside JSON string values (MedGemma wraps long `reasoning_chain` strings across lines, which is invalid JSON). Fixes summary endpoint 500 error.
+
+- `frontend/app/page.tsx` — **Uncertain modality UI**:
+  - When `modality === "uncertain"`: hides misleading MedSigLIP triage chips, shows "Image type auto-detected by MedGemma" badge instead
+  - Triage divider shown for both uncertain and normal cases
+
+- `frontend/app/debate/page.tsx` — **Adaptive debate display**:
+  - Intro message: when uncertain, says "analyzed using MedGemma interpretation" (no mention of MedSigLIP triage)
+  - Sidebar image caption: shows "Medical Image / MedGemma direct analysis" instead of low-confidence triage info
+
+### Added
+
+- `test-data/derm-melanoma.jpg` — Melanoma test image (previously added)
+- `test-data/demo-cases.md` — 4 demo test cases (melanoma, psoriasis, breast carcinoma, lung adenocarcinoma)
+
+### Tested (Partial — needs full verification)
+
+- ✅ Derm melanoma image: fallback triggered at 22.2% confidence → MedGemma correctly identified skin lesion, ABCDE criteria, acral lentiginous melanoma differential
+- ✅ Frontend: "Image type auto-detected by MedGemma" badge, hidden triage chips, debate sidebar updated
+- ✅ Differential: Melanoma (High) with correct supporting/against evidence
+- ⚠️ MedGemma inconsistency observed: same image produced thorough analysis on first run, refusal on second (temp=0.7). Fixed with temp=0.1 but **not yet re-tested**.
+- ⚠️ Summary JSON parse fix **not yet re-tested**
+- ⚠️ X-ray regression check **not yet done**
+
+### Challenges
+
+- **MedSigLIP label sensitivity**: Even with improved labels, MedSigLIP still classified the watermarked derm image as "scanned document" (22.2%). The DermNet watermark/logo at the bottom is likely the culprit. The confidence threshold fallback is the robust solution.
+- **MedGemma non-determinism**: At temperature 0.7, the same image produced completely different outputs (detailed analysis vs full refusal). Root cause: sampling randomness at the `do_sample=True` level. Fixed by setting `temperature=0.1`.
+- **JSON literal newlines**: MedGemma wraps long strings across lines in JSON output, producing invalid JSON. Standard truncation repair couldn't fix it because the newline error prevented parsing before repair could run.
+
+### Future Considerations
+
+- Consider `temperature=0.0` for even stricter determinism if 0.1 still shows variance
+- Add retry mechanism: if MedGemma's response is mostly disclaimers after stripping, auto-retry once
+- Fine-tune or add few-shot examples for dermatology/pathology image analysis
+- Test with more diverse derm/pathology images to validate label improvements
+- Consider adding a `seed` parameter for full reproducibility (hardware-dependent)
+
+---
+
 ## Future Changes
 
 _Document all code changes below with date and description._
