@@ -85,6 +85,7 @@ $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 7. **Collaborative process**: Work with user to identify most efficient solution
 8. **Web search when uncertain**: Verify APIs/libraries via documentation, don't assume
 9. **Always load `heroui-react` skill** before making any frontend UI changes
+10. **Git: generate commit messages only**: Do NOT run `git add`, `git commit`, or `git push` commands. Instead, generate the commit message/description for the user to input manually via VS Code Source Control or GitHub Desktop. PowerShell's PSReadLine crashes on multiline commit messages (terminal buffer overflow), and `&&` chaining is not supported in older PowerShell versions.
 
 ---
 

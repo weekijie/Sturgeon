@@ -237,6 +237,35 @@ def _repair_truncated_json(text: str) -> str:
     return text
 
 
+def _fix_newlines_in_json_strings(text: str) -> str:
+    """Replace literal newlines inside JSON string values with spaces.
+    
+    Walks the text character-by-character, tracking whether we're inside
+    a quoted string.  Any \\n found inside a string is replaced with a space.
+    This is more robust than regex which can't reliably detect string boundaries
+    (e.g. newlines after punctuation like '),' were missed by the old approach).
+    """
+    result = []
+    in_string = False
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c == '\\' and in_string and i + 1 < len(text):
+            # Escaped character inside string — keep both chars as-is
+            result.append(c)
+            result.append(text[i + 1])
+            i += 2
+            continue
+        if c == '"':
+            in_string = not in_string
+        if c == '\n' and in_string:
+            result.append(' ')
+        else:
+            result.append(c)
+        i += 1
+    return ''.join(result)
+
+
 def extract_json(text: str) -> dict:
     """Extract JSON from model response with robust repair for truncated output.
     
@@ -260,10 +289,11 @@ def extract_json(text: str) -> dict:
         logger.error(f"No JSON object found in response: {text[:200]}...")
         raise HTTPException(status_code=500, detail="Model response contained no JSON")
     
-    # Pre-process: escape literal newlines inside JSON string values.
-    # MedGemma often wraps long strings across lines, which is invalid JSON.
-    # Replace newlines that appear between non-structural quotes with \n.
-    text = re.sub(r'(?<=\w)\s*\n\s*(?=\w)', ' ', text)
+    # Pre-process: fix literal newlines inside JSON string values.
+    # MedGemma wraps long strings across lines (e.g. reasoning_chain entries),
+    # which is invalid JSON.  Walk the text tracking quote boundaries and
+    # replace any \n found inside a string with a space.
+    text = _fix_newlines_in_json_strings(text)
     
     # Attempt 1: direct parse
     try:
@@ -314,16 +344,18 @@ def extract_json(text: str) -> dict:
     raise HTTPException(status_code=500, detail="Failed to parse model response as JSON")
 
 
-def strip_disclaimers(text: str) -> str:
-    """Strip common AI safety disclaimers from model output.
+def _is_pure_refusal(text: str) -> bool:
+    """Detect if MedGemma's output is a pure refusal with no real analysis.
     
-    MedGemma sometimes prepends/appends standard disclaimers like:
-    - "I am a large language model..."
-    - "As an AI language model..."
-    - "I'm not a medical professional..."
-    - "This is not medical advice..."
+    Returns True if the output is entirely disclaimers/refusal boilerplate
+    (e.g. "I am an AI and cannot provide medical advice.") with no
+    substantive clinical content.  Returns False if there IS useful
+    analysis — even if it starts with a disclaimer prefix.
+    
+    This is used to trigger a retry with a simpler prompt, NOT to
+    strip disclaimers from otherwise good output.  Medical AI
+    disclaimers are appropriate and should be shown to users.
     """
-    # Patterns to remove (case-insensitive, match full sentences)
     disclaimer_patterns = [
         r"(?:^|\n)\s*(?:I am|I'm) (?:a |an )?(?:large )?(?:language model|AI|artificial intelligence)[^.]*\.\s*",
         r"(?:^|\n)\s*As an AI(?:\s+language model)?[^.]*\.\s*",
@@ -332,32 +364,25 @@ def strip_disclaimers(text: str) -> str:
         r"(?:^|\n)\s*(?:It is (?:essential|important) to |Please |Always )?consult (?:with )?(?:a |your )?(?:qualified )?(?:healthcare|medical) (?:professional|provider|doctor)[^.]*\.\s*",
         r"(?:^|\n)\s*(?:I cannot|I can't) (?:provide|give|offer) medical (?:advice|diagnosis|treatment)[^.]*\.\s*",
         r"(?:^|\n)\s*(?:I am unable|I'm unable) to provide (?:a )?(?:medical )?(?:diagnosis|interpretation|clinical interpretation)[^.]*\.\s*",
-        # "This is because I am an AI..." / "Analyzing medical images requires..."
         r"(?:^|\n)\s*This is because I (?:am|'m) an AI[^.]*\.\s*",
         r"(?:^|\n)\s*Analyzing medical images requires[^.]*\.\s*",
-        # "If you have a medical image..." / "They can properly interpret..."
         r"(?:^|\n)\s*If you have a medical image[^.]*\.\s*",
         r"(?:^|\n)\s*They can properly[^.]*\.\s*",
-        # Match **Disclaimer** or Disclaimer blocks (may span multiple sentences to end of text)
         r"(?:^|\n)\s*\*{0,2}Disclaimer\*{0,2}:?\s*.*",
         r"(?:^|\n)\s*(?:Important|Note):?\s*(?:I am|I'm|This is) (?:not |an )?(?:AI|a substitute)[^.]*\.\s*",
     ]
     
     cleaned = text
     for pattern in disclaimer_patterns:
-        # Use DOTALL for the Disclaimer pattern so .* matches across newlines
         flags = re.IGNORECASE | re.DOTALL if 'Disclaimer' in pattern else re.IGNORECASE
         cleaned = re.sub(pattern, '\n', cleaned, flags=flags)
     
     # Clean up excess whitespace
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
     
-    # If stripping removed too much, the model refused to analyze —
-    # return a helpful fallback instead of raw disclaimer text.
-    if len(cleaned) < 50:
-        return "The model could not generate a detailed interpretation for this image. Clinical analysis will proceed based on patient history and other available data."
-    
-    return cleaned
+    # If less than 50 chars remain after removing all disclaimers,
+    # the model produced no real analysis — it's a pure refusal.
+    return len(cleaned) < 50
 
 
 def format_lab_values(lab_values: dict) -> str:
@@ -784,8 +809,32 @@ Be specific and cite visible features in the image."""
         logger.error(f"MedGemma image analysis failed: {e}")
         medgemma_analysis = f"Image analysis encountered an error: {str(e)}"
     
-    # Strip AI disclaimers from output for clean UI presentation
-    medgemma_analysis = strip_disclaimers(medgemma_analysis)
+    # Check if MedGemma refused (pure disclaimers, no real analysis).
+    # If so, retry once with a simpler prompt that bypasses safety guardrails.
+    # We do NOT strip disclaimers from real analysis — they're appropriate for medical AI.
+    if _is_pure_refusal(medgemma_analysis):
+        logger.info("MedGemma refused on first attempt, retrying with direct prompt...")
+        retry_prompt = (
+            "Describe the visual findings in this medical image. "
+            "Focus only on what you observe: colors, shapes, textures, "
+            "borders, symmetry, and any notable features. "
+            "Do not provide a diagnosis, just describe the image."
+        )
+        try:
+            retry_analysis = model.generate(
+                retry_prompt,
+                system_prompt="You are a clinical image analyst. Describe medical images objectively.",
+                image=image,
+                max_new_tokens=2048,
+                temperature=0.3,
+            )
+            if not _is_pure_refusal(retry_analysis):
+                logger.info(f"Retry succeeded: {len(retry_analysis)} chars")
+                medgemma_analysis = retry_analysis
+            else:
+                logger.warning("Retry also refused, keeping original output")
+        except Exception as e:
+            logger.warning(f"Retry failed: {e}")
     
     return ImageAnalysisResponse(
         image_type=triage_result.get("image_type", "medical image"),
