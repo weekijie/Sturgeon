@@ -67,12 +67,12 @@ In medical dramas like House MD, correct diagnoses emerge from debate—not from
 
 **How Sturgeon meets this**:
 
-| Agentic Criterion            | Sturgeon Implementation                                   |
-| ---------------------------- | --------------------------------------------------------- |
-| Complex workflow reimagined  | Differential diagnosis via multi-round debate             |
-| HAI-DEF as intelligent agent | MedGemma as callable medical specialist tool              |
+| Agentic Criterion            | Sturgeon Implementation                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------- |
+| Complex workflow reimagined  | Differential diagnosis via multi-round debate                                                     |
+| HAI-DEF as intelligent agent | MedGemma as callable medical specialist tool                                                      |
 | Callable tool behavior       | Gemini orchestrator calls MedGemma for: extract labs, reason, analyze images, update differential |
-| Improved outcomes            | Catches overlooked diagnoses through structured debate    |
+| Improved outcomes            | Catches overlooked diagnoses through structured debate                                            |
 
 ---
 
@@ -105,13 +105,13 @@ _Source: [medgemma_hackathon_analysis.md](file:///C:/Users/weeki/.gemini/antigra
 
 ### Dual-Model Agentic Architecture
 
-| Layer        | Technology                                | Purpose                          |
-| ------------ | ----------------------------------------- | -------------------------------- |
-| Frontend     | Next.js 14 (App Router) + HeroUI v3      | UI + API routes                  |
-| Backend      | Python FastAPI                            | Orchestration + inference        |
-| Medical AI   | **MedGemma 4B-it** (bfloat16)            | ALL medical reasoning + images   |
-| Orchestrator | **Gemini Pro/Flash** (Google AI API)      | Conversation management + debate flow |
-| Hosting      | Vercel (frontend) + local/Kaggle (AI)     | Free deployment                  |
+| Layer        | Technology                            | Purpose                               |
+| ------------ | ------------------------------------- | ------------------------------------- |
+| Frontend     | Next.js 14 (App Router) + HeroUI v3   | UI + API routes                       |
+| Backend      | Python FastAPI                        | Orchestration + inference             |
+| Medical AI   | **MedGemma 4B-it** (bfloat16)         | ALL medical reasoning + images        |
+| Orchestrator | **Gemini Flash** (Google AI API)      | Conversation management + debate flow |
+| Hosting      | Vercel (frontend) + local/Kaggle (AI) | Free deployment                       |
 
 ### Why Dual-Model (MedGemma + Gemini)
 
@@ -125,22 +125,22 @@ _Source: [medgemma_hackathon_analysis.md](file:///C:/Users/weeki/.gemini/antigra
 
 _Source: [hai_def_models_reference.md](file:///C:/Users/weeki/.gemini/antigravity/brain/0317cc99-b5d0-40dd-a0ee-1df59c76af76/hai_def_models_reference.md)_
 
-| Capability                | Sturgeon Usage                              |
-| ------------------------- | ------------------------------------------- |
-| Document Understanding    | Extract lab values from PDF                 |
-| Medical Text Reasoning    | Generate differential diagnoses             |
-| Clinical Q&A              | Respond to challenges                       |
-| Text Generation           | Produce explanations                        |
-| **Medical Image Analysis**| Chest X-ray, dermatology, pathology, fundus |
+| Capability                 | Sturgeon Usage                              |
+| -------------------------- | ------------------------------------------- |
+| Document Understanding     | Extract lab values from PDF                 |
+| Medical Text Reasoning     | Generate differential diagnoses             |
+| Clinical Q&A               | Respond to challenges                       |
+| Text Generation            | Produce explanations                        |
+| **Medical Image Analysis** | Chest X-ray, dermatology, pathology, fundus |
 
 ### MedGemma 4B Limitations & Mitigations
 
-| Limitation                   | Mitigation                                              |
-| ---------------------------- | ------------------------------------------------------- |
+| Limitation                   | Mitigation                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------------- |
 | Not optimized for multi-turn | Gemini orchestrates conversation, MedGemma handles medical queries as single-turn calls |
-| Prompt sensitivity           | Carefully engineered prompts (see below)                |
-| Not clinical-grade           | Clear disclaimers, educational framing                  |
-| Single-image tasks only      | One image per MedGemma call, orchestrated by Gemini     |
+| Prompt sensitivity           | Carefully engineered prompts (see below)                                                |
+| Not clinical-grade           | Clear disclaimers, educational framing                                                  |
+| Single-image tasks only      | One image per MedGemma call, orchestrated by Gemini                                     |
 
 ---
 
@@ -497,16 +497,18 @@ Sturgeon/
 - [x] `/summary` endpoint working
 - [x] Full E2E flow from upload to summary
 - [x] Architecture upgraded to Gemini + MedGemma agentic dual-model
-- [ ] Implement Gemini orchestrator + structured clinical state
-- [ ] Fix multi-turn debate with Gemini as conversation manager
-- [ ] Add medical image analysis (MedGemma multimodal)
-- [ ] 2 demo cases prepared and tested
-- [ ] UI polished
+- [x] Implement Gemini orchestrator + structured clinical state
+- [x] Fix multi-turn debate with Gemini as conversation manager
+- [x] Add medical image analysis (MedGemma multimodal)
+- [x] 4 demo cases prepared and tested (melanoma, psoriasis, carcinoma, adenocarcinoma)
+- [x] UI polished
 
 ### Week 3 Milestones
 
-- [ ] Add lab report file parsing (`/extract-labs`)
-- [ ] Add session persistence (localStorage)
+- [x] Add lab report file parsing (`/extract-labs`)
+- [x] Add session persistence (localStorage)
+- [x] Multi-file upload (image + lab report simultaneously)
+- [x] Refusal preamble stripping for cleaner MedGemma output
 - [ ] RAG with clinical guidelines (stretch goal)
 - [ ] Fine-tune MedGemma for debate (stretch goal)
 - [ ] Demo video recorded (≤3 min)
@@ -585,14 +587,14 @@ Sturgeon/
 
 ## Risk Mitigation
 
-| Risk                         | Probability | Impact | Mitigation                                     |
-| ---------------------------- | ----------- | ------ | ---------------------------------------------- |
+| Risk                         | Probability | Impact   | Mitigation                                                                   |
+| ---------------------------- | ----------- | -------- | ---------------------------------------------------------------------------- |
 | MedGemma multi-turn degrades | ~~Medium~~  | ~~High~~ | Solved: Gemini handles multi-turn, MedGemma does single-turn medical queries |
-| Gemini API downtime          | Low         | High   | Can fall back to structured-state-only approach |
-| Quantization hurts quality   | N/A         | N/A    | Using bfloat16 (full quality)                  |
-| Time overrun                 | Low         | Medium | Ahead of schedule with AI assistance           |
-| Demo case fails on video     | Medium      | High   | Prepare 3 cases, use most reliable             |
-| GPU issues on 9060 XT        | Low         | Medium | Kaggle backup ready                            |
+| Gemini API downtime          | Low         | High     | Can fall back to structured-state-only approach                              |
+| Quantization hurts quality   | N/A         | N/A      | Using bfloat16 (full quality)                                                |
+| Time overrun                 | Low         | Medium   | Ahead of schedule with AI assistance                                         |
+| Demo case fails on video     | Medium      | High     | Prepare 3 cases, use most reliable                                           |
+| GPU issues on 9060 XT        | Low         | Medium   | Kaggle backup ready                                                          |
 
 ---
 

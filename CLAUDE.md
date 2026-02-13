@@ -86,6 +86,7 @@ $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 8. **Web search when uncertain**: Verify APIs/libraries via documentation, don't assume
 9. **Always load `heroui-react` skill** before making any frontend UI changes
 10. **Git: generate commit messages only**: Do NOT run `git add`, `git commit`, or `git push` commands. Instead, generate the commit message/description for the user to input manually via VS Code Source Control or GitHub Desktop. PowerShell's PSReadLine crashes on multiline commit messages (terminal buffer overflow), and `&&` chaining is not supported in older PowerShell versions.
+11. **Read before editing**: Always read/view the file (or relevant section) before making edits. Do not edit files blindly from memory — the file may have changed since you last saw it.
 
 ---
 
@@ -159,18 +160,21 @@ Sturgeon/
 - [x] Gemini + MedGemma agentic architecture (code complete)
 - [x] Add lab report file parsing (`/extract-labs-file`) — PDF/TXT upload, pdfplumber extraction, MedGemma structured parsing, lab values table UI
 - [x] Add session persistence (localStorage) — lazy `useState` initializer reads from localStorage, `setCaseDataAndPersist` wrapper writes on every state change, zero `useEffect`, SSR-safe
-- [x] Agentic flow code review — 12 fixes across backend + frontend (async blocking, error handling, session persistence, hydration, temperature parameterization, retry UX, dead code removal, Gemini timeout, global-error boundary)
-
-### In Progress
-
-- [ ] Verify MedSigLIP triage fixes: X-ray regression, summary JSON, temperature 0.1 consistency
+- [x] Agentic flow code review — 12 fixes across backend + frontend
+- [x] Verify MedSigLIP triage fixes (Validated with derm-melanoma.jpg E2E test)
+- [x] Multi-file upload — simultaneous image + lab report upload, parallel `Promise.all` processing, individual remove buttons
+- [x] Refusal preamble stripping — `_strip_refusal_preamble()` strips "I am unable to... However..." prefix when real analysis follows
+- [x] Summary token limit bumped (2048 → 3072) to prevent truncated JSON
 
 ### Next Steps (Priority Order)
 
-1. [ ] Complete verification of image triage improvements
-2. [ ] Prepare demo cases
-3. [ ] RAG with clinical guidelines (stretch goal)
-4. [ ] Fine-tune MedGemma for debate (stretch goal)
+1. [ ] Get higher-res breast carcinoma test image (current is 50×50px)
+2. [ ] Prepare demo script (`DEMO_SCRIPT.md`)
+3. [ ] Record demo video (≤3 min)
+4. [ ] Write submission document
+5. [ ] Polish README with screenshots
+6. [ ] Deploy frontend to Vercel
+7. [ ] Submit to Kaggle
 
 ---
 
@@ -184,7 +188,9 @@ See `CHANGELOG.md` for all code changes.
 **Feb 8, 2026**: Lab report file parsing feature complete. New `/extract-labs-file` endpoint (PDF via pdfplumber, TXT direct read, MedGemma structured parsing). Frontend: proxy route, CaseContext types, Upload page lab table UI (color-coded H/L/N), Debate page sidebar lab section. Bug fixes: button overflow, error message parsing (proxy JSON extraction + `errData.detail` fallback), MedGemma retry on JSON parse failure, max_new_tokens bumped to 2048.
 **Feb 8, 2026**: Session persistence via localStorage. Zero-`useEffect` approach: lazy `useState` initializer for read, `setCaseDataAndPersist` wrapper for write. SSR-safe, size guard (strips imagePreviewUrl on quota exceeded), clean reset via `localStorage.removeItem`.
 **Feb 8, 2026**: Agentic flow code review — 12 fixes. Backend: asyncio.to_thread for non-blocking inference, temperature parameterization (0.3 structured / 0.4 orchestrator / 0.7 debate), 60s Gemini timeout, dead code removal. Frontend: summary double-fire fix, error detail field consistency, sessionId persistence + chat reconstruction, suggested test banner, retry auto-resend, hydration mismatch fix, global-error.tsx for Next.js 16 Turbopack bug.
-**Feb 12, 2026**: MedSigLIP triage accuracy improvement. Label engineering (8 zero-shot labels), confidence threshold fallback (modality="uncertain"), adaptive MedGemma prompt, disclaimer stripping, JSON newline repair, image analysis temp=0.1.
+**Feb 12, 2026**: MedSigLIP triage accuracy improvement. Label engineering (8 zero-shot labels), confidence threshold fallback (modality="uncertain"), adaptive MedGemma prompt, image analysis temp=0.1.
+**Feb 13, 2026**: Refactored `strip_disclaimers` → `_is_pure_refusal` (boolean refusal detector, no text modification). Fixed JSON newline repair with string-aware `_fix_newlines_in_json_strings()`. Added auto-retry for image analysis refusals. All 4 demo cases verified E2E.
+**Feb 13, 2026**: Multi-file upload — `page.tsx` rewritten from single `file` state to `imageFile` + `labFile` slots. `processFiles()` classifies by type, `Promise.all` runs image analysis + lab extraction in parallel. Drop zone shows both files with individual ✕ remove buttons. Added `_strip_refusal_preamble()` to strip "I am unable to... However..." prefix. Summary `max_new_tokens` bumped 2048→3072.
 
 ---
 

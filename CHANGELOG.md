@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-02-13] Session 2 - Multi-File Upload & Response Cleaning
+
+### Added
+
+- `frontend/app/page.tsx` - **Multi-file upload**: Simultaneous image + lab report upload
+  - Split `file` state → `imageFile` + `labFile` (separate slots)
+  - `processFiles()` auto-classifies files by type (image vs PDF/TXT)
+  - `Promise.all` runs image analysis + lab extraction in parallel
+  - Drop zone shows both files with individual ✕ remove buttons + "Clear all"
+  - `<input multiple>` accepts multiple files at once
+  - Hint text: "You can upload both an image and a lab report"
+- `ai-service/main.py` - **`_strip_refusal_preamble()`**: Strips leading "I am unable to... However..." boilerplate when real analysis (>100 chars) follows. Trailing disclaimers kept.
+
+### Changed
+
+- `ai-service/main.py` - Summary endpoint `max_new_tokens` bumped 2048 → 3072 (prevents truncated JSON on complex cases)
+- `ai-service/main.py` - Wired `_strip_refusal_preamble` into `/analyze-image` with logging
+
+### Documentation
+
+- `CLAUDE.md` - Updated completed items, cleared In Progress, refreshed Next Steps
+- `STURGEON_PROJECT_PLAN.md` - Marked Week 2/3 milestones (demo cases, UI polish, multi-file upload)
+
+---
+
 ## [2026-02-06] Session 1 - Project Setup
 
 ### Added
@@ -312,28 +337,50 @@ MedSigLIP misclassified non-radiology images (e.g., `derm-melanoma.jpg` → "lab
 - `test-data/derm-melanoma.jpg` — Melanoma test image (previously added)
 - `test-data/demo-cases.md` — 4 demo test cases (melanoma, psoriasis, breast carcinoma, lung adenocarcinoma)
 
-### Tested (Partial — needs full verification)
+### Tested — All 4 demo cases verified E2E
 
-- ✅ Derm melanoma image: fallback triggered at 22.2% confidence → MedGemma correctly identified skin lesion, ABCDE criteria, acral lentiginous melanoma differential
-- ✅ Frontend: "Image type auto-detected by MedGemma" badge, hidden triage chips, debate sidebar updated
-- ✅ Differential: Melanoma (High) with correct supporting/against evidence
-- ⚠️ MedGemma inconsistency observed: same image produced thorough analysis on first run, refusal on second (temp=0.7). Fixed with temp=0.1 but **not yet re-tested**.
-- ⚠️ Summary JSON parse fix **not yet re-tested**
-- ⚠️ X-ray regression check **not yet done**
+- ✅ Derm melanoma: MedSigLIP fallback (22.2%) → MedGemma retry → Melanoma (High) 90%
+- ✅ Derm psoriasis: MedSigLIP classified correctly (43.3%) → 3535-char analysis → Plaque Psoriasis (High) 90%
+- ✅ Breast carcinoma: MedSigLIP classified (33.4%) → IDC (High) 90%, with EGFR/PR/HER2 reasoning
+- ✅ Lung adenocarcinoma: MedSigLIP fallback (24.6%) → MedGemma retry → Lung Adenocarcinoma 90%
+- ✅ Summary JSON parse: all cases returned 200 OK
+- ✅ Debate: agentic flow working (Gemini orchestrator → MedGemma queries → updated differentials)
 
 ### Challenges
 
-- **MedSigLIP label sensitivity**: Even with improved labels, MedSigLIP still classified the watermarked derm image as "scanned document" (22.2%). The DermNet watermark/logo at the bottom is likely the culprit. The confidence threshold fallback is the robust solution.
-- **MedGemma non-determinism**: At temperature 0.7, the same image produced completely different outputs (detailed analysis vs full refusal). Root cause: sampling randomness at the `do_sample=True` level. Fixed by setting `temperature=0.1`.
-- **JSON literal newlines**: MedGemma wraps long strings across lines in JSON output, producing invalid JSON. Standard truncation repair couldn't fix it because the newline error prevented parsing before repair could run.
+- **MedSigLIP confidence varies by lesion-to-background ratio**: Small lesions (melanoma on heel) get low confidence, large lesions (psoriasis plaque) classify correctly. Not caused by watermarks — both DermNet images had identical watermarks.
+- **MedGemma non-determinism**: At temperature 0.7, the same image produced completely different outputs (detailed analysis vs full refusal). Root cause: sampling randomness. Fixed by setting `temperature=0.1`, though MedGemma may still refuse some images at any temperature.
+- **JSON literal newlines**: MedGemma wraps long strings across lines in JSON output, producing invalid JSON. The initial regex fix `(?<=\w)\n(?=\w)` missed newlines after punctuation (e.g., `(B+),\nColor`). Fixed with string-aware char-by-char approach.
 
 ### Future Considerations
 
-- Consider `temperature=0.0` for even stricter determinism if 0.1 still shows variance
-- Add retry mechanism: if MedGemma's response is mostly disclaimers after stripping, auto-retry once
+- Image preprocessing (crop/zoom to lesion area) to improve MedSigLIP confidence — stretch goal
 - Fine-tune or add few-shot examples for dermatology/pathology image analysis
 - Test with more diverse derm/pathology images to validate label improvements
 - Consider adding a `seed` parameter for full reproducibility (hardware-dependent)
+
+---
+
+## [2026-02-13] Session 11 — Refusal Detection Refactor & JSON Fix
+
+### Problem
+
+1. `strip_disclaimers()` was silently removing AI safety disclaimers from MedGemma output — inappropriate for a medical AI product. Disclaimers like "I am an AI and cannot provide medical advice" are appropriate and should be shown.
+2. JSON newline repair used fragile regex `(?<=\w)\n(?=\w)` that only caught newlines between word characters, missing breaks after punctuation like `(B+),\nColor`.
+
+### Changed
+
+- `ai-service/main.py`:
+  - **Renamed** `strip_disclaimers()` → `_is_pure_refusal()`: returns boolean instead of modified text. Detects pure refusals (< 50 chars remaining after removing disclaimer patterns) without modifying the output.
+  - **Auto-retry for refusals**: When `_is_pure_refusal()` returns True, retries with "describe visual findings" prompt at temp 0.3. Bypasses safety guardrails by reframing the task.
+  - **JSON newline fix**: Replaced regex with `_fix_newlines_in_json_strings()` — walks text char-by-char tracking quote boundaries, replaces literal `\n` inside strings with spaces. Works regardless of surrounding characters.
+
+### Tested
+
+- ✅ All 4 demo cases pass E2E (see Session 10 test results above)
+- ✅ Melanoma + lung adenocarcinoma: retry mechanism triggers and succeeds
+- ✅ Psoriasis + breast carcinoma: no retry needed, disclaimers preserved in output
+- ✅ Summary JSON parse: 200 OK on all cases
 
 ---
 

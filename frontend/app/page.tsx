@@ -28,13 +28,21 @@ function readAsDataUrl(file: File): Promise<string> {
 }
 
 // Component: Expandable text with "Read More" toggle
-function ExpandableText({ text, previewLength = 400 }: { text: string; previewLength?: number }) {
+function ExpandableText({
+  text,
+  previewLength = 400,
+}: {
+  text: string;
+  previewLength?: number;
+}) {
   const [expanded, setExpanded] = useState(false);
   const needsExpansion = text.length > previewLength;
 
   return (
     <div>
-      <div className={`text-sm leading-relaxed ${!expanded && needsExpansion ? "max-h-48 overflow-hidden relative" : ""}`}>
+      <div
+        className={`text-sm leading-relaxed ${!expanded && needsExpansion ? "max-h-48 overflow-hidden relative" : ""}`}
+      >
         {expanded || !needsExpansion ? (
           <Prose content={text} />
         ) : (
@@ -46,7 +54,10 @@ function ExpandableText({ text, previewLength = 400 }: { text: string; previewLe
       </div>
       {needsExpansion && (
         <button
-          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(!expanded);
+          }}
           className="text-xs text-teal hover:text-teal/80 mt-2 font-semibold px-3 py-1 rounded-full bg-teal-light/50 hover:bg-teal-light transition-colors"
         >
           {expanded ? "Show less" : "Read more"}
@@ -58,9 +69,16 @@ function ExpandableText({ text, previewLength = 400 }: { text: string; previewLe
 
 export default function UploadPage() {
   const router = useRouter();
-  const { setPatientHistory, setDifferential, setImageAnalysis, setLabResults } = useCase();
+  const {
+    setPatientHistory,
+    setDifferential,
+    setImageAnalysis,
+    setLabResults,
+  } = useCase();
 
-  const [file, setFile] = useState<File | null>(null);
+  // Multi-file state: separate slots for image and lab report
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [labFile, setLabFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [patientHistory, setPatientHistoryLocal] = useState("");
   const [isDragging, setIsDragging] = useState(false);
@@ -69,6 +87,25 @@ export default function UploadPage() {
   const [imageResult, setImageResult] = useState<ImageAnalysis | null>(null);
   const [labResult, setLabResult] = useState<LabResults | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const hasAnyFile = imageFile || labFile;
+
+  // Process incoming files: classify and store in the right slot
+  const processFiles = useCallback(async (incoming: FileList) => {
+    for (let i = 0; i < incoming.length; i++) {
+      const f = incoming[i];
+      if (isImageFile(f)) {
+        setImageFile(f);
+        setImageResult(null);
+        const url = await readAsDataUrl(f);
+        setImagePreview(url);
+      } else if (isLabFile(f)) {
+        setLabFile(f);
+        setLabResult(null);
+      }
+      // Unsupported types are silently ignored
+    }
+  }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -80,93 +117,125 @@ export default function UploadPage() {
     setIsDragging(false);
   }, []);
 
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) {
-      setFile(droppedFile);
-      setImageResult(null);
-      setLabResult(null);
-      if (isImageFile(droppedFile)) {
-        const url = await readAsDataUrl(droppedFile);
-        setImagePreview(url);
-      } else {
-        setImagePreview(null);
-      }
-    }
-  }, []);
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      await processFiles(e.dataTransfer.files);
+    },
+    [processFiles],
+  );
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const selectedFile = e.target.files?.[0];
-      if (selectedFile) {
-        setFile(selectedFile);
-        setImageResult(null);
-        setLabResult(null);
-        if (isImageFile(selectedFile)) {
-          const url = await readAsDataUrl(selectedFile);
-          setImagePreview(url);
-        } else {
-          setImagePreview(null);
-        }
+      if (e.target.files && e.target.files.length > 0) {
+        await processFiles(e.target.files);
       }
     },
-    [],
+    [processFiles],
   );
 
-  const clearFile = useCallback(() => {
-    setFile(null);
+  const clearImage = useCallback(() => {
+    setImageFile(null);
     setImagePreview(null);
     setImageResult(null);
+  }, []);
+
+  const clearLab = useCallback(() => {
+    setLabFile(null);
     setLabResult(null);
   }, []);
 
+  const clearAll = useCallback(() => {
+    clearImage();
+    clearLab();
+  }, [clearImage, clearLab]);
+
   const handleAnalyze = async () => {
-    if (!file && !patientHistory.trim()) return;
+    if (!imageFile && !labFile && !patientHistory.trim()) return;
 
     setIsAnalyzing(true);
     setError(null);
 
     try {
-      let imgAnalysis: ImageAnalysis | null = null;
-      let labExtraction: LabResults | null = null;
       let enrichedHistory = patientHistory;
 
-      // Step 1a: If image file, analyze it first
-      if (file && isImageFile(file)) {
-        setAnalysisStep("Analyzing image with MedSigLIP + MedGemma...");
+      // Step 1: Run image analysis and lab extraction in parallel
+      const imagePromise = imageFile
+        ? (async () => {
+            setAnalysisStep("Analyzing image with MedSigLIP + MedGemma...");
+            const formData = new FormData();
+            formData.append("file", imageFile);
 
-        const formData = new FormData();
-        formData.append("file", file);
+            const imageResponse = await fetch("/api/analyze-image", {
+              method: "POST",
+              body: formData,
+            });
 
-        const imageResponse = await fetch("/api/analyze-image", {
-          method: "POST",
-          body: formData,
-        });
+            if (!imageResponse.ok) {
+              const errData = await imageResponse.json().catch(() => ({}));
+              throw new Error(
+                errData.details || errData.error || "Image analysis failed",
+              );
+            }
 
-        if (!imageResponse.ok) {
-          const errData = await imageResponse.json().catch(() => ({}));
-          throw new Error(
-            errData.details || errData.error || "Image analysis failed",
-          );
-        }
+            return (await imageResponse.json()) as ImageAnalysis;
+          })()
+        : Promise.resolve(null);
 
-        imgAnalysis = await imageResponse.json();
+      const labPromise = labFile
+        ? (async () => {
+            if (!imageFile)
+              setAnalysisStep("Extracting lab values with MedGemma...");
+            const formData = new FormData();
+            formData.append("file", labFile);
+
+            const labResponse = await fetch("/api/extract-labs", {
+              method: "POST",
+              body: formData,
+            });
+
+            if (!labResponse.ok) {
+              const errData = await labResponse.json().catch(() => ({}));
+              throw new Error(
+                errData.detail ||
+                  errData.details ||
+                  errData.error ||
+                  "Lab extraction failed",
+              );
+            }
+
+            return (await labResponse.json()) as LabResults;
+          })()
+        : Promise.resolve(null);
+
+      // Wait for both to complete
+      setAnalysisStep(
+        imageFile && labFile
+          ? "Analyzing image + extracting lab values..."
+          : imageFile
+            ? "Analyzing image with MedSigLIP + MedGemma..."
+            : "Extracting lab values with MedGemma...",
+      );
+
+      const [imgAnalysis, labExtraction] = await Promise.all([
+        imagePromise,
+        labPromise,
+      ]);
+
+      // Process image results
+      if (imgAnalysis) {
         setImageResult(imgAnalysis);
-
-        // Store in context
-        if (imgAnalysis && imagePreview) {
+        if (imagePreview) {
           setImageAnalysis(imgAnalysis, imagePreview);
         }
 
-        // Enrich patient history with image findings for the differential
         const imageContext = [
           `\n\n--- Medical Image Analysis ---`,
-          `Image type: ${imgAnalysis!.image_type}`,
-          `Modality: ${imgAnalysis!.modality}`,
-          imgAnalysis!.triage_summary,
-          `\nDetailed Interpretation:\n${imgAnalysis!.medgemma_analysis}`,
+          `Image type: ${imgAnalysis.image_type}`,
+          `Modality: ${imgAnalysis.modality}`,
+          imgAnalysis.triage_summary,
+          `\nDetailed Interpretation:\n${imgAnalysis.medgemma_analysis}`,
         ].join("\n");
 
         enrichedHistory = patientHistory
@@ -174,32 +243,10 @@ export default function UploadPage() {
           : imageContext;
       }
 
-      // Step 1b: If lab report file (PDF/TXT), extract structured lab values
-      if (file && isLabFile(file)) {
-        setAnalysisStep("Extracting lab values with MedGemma...");
-
-        const formData = new FormData();
-        formData.append("file", file);
-
-        const labResponse = await fetch("/api/extract-labs", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!labResponse.ok) {
-          const errData = await labResponse.json().catch(() => ({}));
-          throw new Error(
-            errData.detail || errData.details || errData.error || "Lab extraction failed",
-          );
-        }
-
-        labExtraction = await labResponse.json();
+      // Process lab results
+      if (labExtraction) {
         setLabResult(labExtraction);
-
-        // Store in context
-        if (labExtraction) {
-          setLabResults(labExtraction);
-        }
+        setLabResults(labExtraction);
       }
 
       // Step 2: Generate differential diagnosis
@@ -255,10 +302,12 @@ export default function UploadPage() {
         <Card className="p-0 bg-white border border-border shadow-sm">
           {/* Card Header */}
           <div className="p-6 pb-0">
-            <h2 className="text-xl font-semibold text-foreground">Upload Evidence</h2>
+            <h2 className="text-xl font-semibold text-foreground">
+              Upload Evidence
+            </h2>
             <p className="text-muted text-sm mt-1">
-              Upload medical images, lab reports (PDF/TXT), or provide
-              patient history
+              Upload medical images, lab reports (PDF/TXT), or provide patient
+              history
             </p>
           </div>
 
@@ -277,17 +326,18 @@ export default function UploadPage() {
                     ? "border-teal bg-teal-light/30"
                     : "border-border hover:border-teal/50 hover:bg-surface"
                 }
-                ${file ? "border-success bg-green-50" : ""}
+                ${hasAnyFile ? "border-success bg-green-50" : ""}
               `}
             >
               <input
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.txt"
+                multiple
                 onChange={handleFileSelect}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
               />
 
-              {file ? (
+              {hasAnyFile ? (
                 <div className="space-y-3">
                   {/* Image preview */}
                   {imagePreview && (
@@ -299,39 +349,98 @@ export default function UploadPage() {
                       />
                     </div>
                   )}
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="text-success text-lg">&#10003;</div>
-                    <p className="font-medium text-foreground">{file.name}</p>
-                    <Chip size="sm" variant="flat">
-                      {(file.size / 1024).toFixed(1)} KB
-                    </Chip>
-                    {isImageFile(file) && (
-                      <Chip size="sm" variant="flat" color="secondary">
-                        Medical Image
-                      </Chip>
+
+                  {/* File chips */}
+                  <div className="flex flex-col items-center gap-2">
+                    {/* Image file chip */}
+                    {imageFile && (
+                      <div className="flex items-center gap-2">
+                        <div className="text-success text-lg">&#10003;</div>
+                        <p className="font-medium text-foreground text-sm">
+                          {imageFile.name}
+                        </p>
+                        <Chip size="sm" variant="flat">
+                          {(imageFile.size / 1024).toFixed(1)} KB
+                        </Chip>
+                        <Chip size="sm" variant="flat" color="secondary">
+                          Medical Image
+                        </Chip>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearImage();
+                          }}
+                          className="relative z-20 text-xs text-muted hover:text-danger transition-colors ml-1"
+                          title="Remove image"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     )}
-                    {isLabFile(file) && (
-                      <Chip size="sm" variant="flat" color="primary">
-                        Lab Report
-                      </Chip>
+
+                    {/* Lab file chip */}
+                    {labFile && (
+                      <div className="flex items-center gap-2">
+                        <div className="text-success text-lg">&#10003;</div>
+                        <p className="font-medium text-foreground text-sm">
+                          {labFile.name}
+                        </p>
+                        <Chip size="sm" variant="flat">
+                          {(labFile.size / 1024).toFixed(1)} KB
+                        </Chip>
+                        <Chip size="sm" variant="flat" color="primary">
+                          Lab Report
+                        </Chip>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearLab();
+                          }}
+                          className="relative z-20 text-xs text-muted hover:text-danger transition-colors ml-1"
+                          title="Remove lab report"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     )}
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearFile();
-                    }}
-                    className="relative z-20 text-sm text-muted hover:text-danger transition-colors"
-                  >
-                    Remove file
-                  </button>
+
+                  {/* Add more / clear all */}
+                  <div className="flex items-center justify-center gap-3">
+                    {(!imageFile || !labFile) && (
+                      <p className="text-xs text-muted">
+                        {!imageFile
+                          ? "Drop an image to add"
+                          : "Drop a lab report to add"}
+                      </p>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearAll();
+                      }}
+                      className="relative z-20 text-sm text-muted hover:text-danger transition-colors"
+                    >
+                      Clear all
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {/* Clean SVG upload icon */}
                   <div className="flex justify-center">
-                    <svg className="w-12 h-12 text-muted/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    <svg
+                      className="w-12 h-12 text-muted/40"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={1.5}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+                      />
                     </svg>
                   </div>
                   <p className="font-medium text-foreground">
@@ -339,6 +448,9 @@ export default function UploadPage() {
                   </p>
                   <p className="text-sm text-muted">
                     X-ray, dermatology, pathology, PDF lab report, or text file
+                  </p>
+                  <p className="text-xs text-muted/70">
+                    You can upload both an image and a lab report
                   </p>
                 </div>
               )}
@@ -348,137 +460,191 @@ export default function UploadPage() {
             {imageResult && (
               <div className="rounded-xl border border-border bg-white p-4 space-y-3 border-l-4 border-l-teal">
                 {/* Section: MedSigLIP Triage (hidden when uncertain) */}
-                {imageResult.modality !== "uncertain" && imageResult.triage_findings.length > 0 && (
-                  <div>
-                    <h3 className="font-semibold text-sm text-foreground mb-2">Image Analysis</h3>
-                    <p className="text-xs text-muted mb-1.5">MedSigLIP Triage Findings:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {imageResult.triage_findings.slice(0, 5).map((f, i) => (
-                        <Chip
-                          key={i}
-                          size="sm"
-                          variant="flat"
-                          color={f.score > 0.3 ? "warning" : "default"}
-                        >
-                          {f.label} ({(f.score * 100).toFixed(0)}%)
-                        </Chip>
-                      ))}
+                {imageResult.modality !== "uncertain" &&
+                  imageResult.triage_findings.length > 0 && (
+                    <div>
+                      <h3 className="font-semibold text-sm text-foreground mb-2">
+                        Image Analysis
+                      </h3>
+                      <p className="text-xs text-muted mb-1.5">
+                        MedSigLIP Triage Findings:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {imageResult.triage_findings.slice(0, 5).map((f, i) => (
+                          <Chip
+                            key={i}
+                            size="sm"
+                            variant="flat"
+                            color={f.score > 0.3 ? "warning" : "default"}
+                          >
+                            {f.label} ({(f.score * 100).toFixed(0)}%)
+                          </Chip>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {/* MedGemma direct analysis badge (shown when triage was uncertain) */}
                 {imageResult.modality === "uncertain" && (
                   <div>
-                    <h3 className="font-semibold text-sm text-foreground mb-2">Image Analysis</h3>
-                    <p className="text-xs text-muted">Image type auto-detected by MedGemma</p>
+                    <h3 className="font-semibold text-sm text-foreground mb-2">
+                      Image Analysis
+                    </h3>
+                    <p className="text-xs text-muted">
+                      Image type auto-detected by MedGemma
+                    </p>
                   </div>
                 )}
 
                 {/* Divider */}
-                {(imageResult.modality === "uncertain" || imageResult.triage_findings.length > 0) && (
+                {(imageResult.modality === "uncertain" ||
+                  imageResult.triage_findings.length > 0) && (
                   <div className="border-t border-border" />
                 )}
 
                 {/* Section: Clinical Interpretation */}
                 <div>
-                  <h3 className="font-semibold text-sm text-foreground mb-2">Clinical Interpretation</h3>
+                  <h3 className="font-semibold text-sm text-foreground mb-2">
+                    Clinical Interpretation
+                  </h3>
                   <ExpandableText text={imageResult.medgemma_analysis} />
                 </div>
               </div>
             )}
 
             {/* Lab Extraction Results */}
-            {labResult && labResult.lab_values && Object.keys(labResult.lab_values).length > 0 && (
-              <div className="rounded-xl border border-border bg-white p-4 space-y-3 border-l-4 border-l-teal">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-sm text-foreground">
-                    Extracted Lab Values
-                  </h3>
+            {labResult &&
+              labResult.lab_values &&
+              Object.keys(labResult.lab_values).length > 0 && (
+                <div className="rounded-xl border border-border bg-white p-4 space-y-3 border-l-4 border-l-teal">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm text-foreground">
+                      Extracted Lab Values
+                    </h3>
+                    {labResult.abnormal_values.length > 0 && (
+                      <Chip size="sm" variant="flat" color="danger">
+                        {labResult.abnormal_values.length} abnormal
+                      </Chip>
+                    )}
+                  </div>
+
+                  {/* Lab Values Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-1.5 pr-3 font-semibold text-muted">
+                            Test
+                          </th>
+                          <th className="text-left py-1.5 pr-3 font-semibold text-muted">
+                            Value
+                          </th>
+                          <th className="text-left py-1.5 pr-3 font-semibold text-muted">
+                            Unit
+                          </th>
+                          <th className="text-left py-1.5 pr-3 font-semibold text-muted">
+                            Reference
+                          </th>
+                          <th className="text-left py-1.5 font-semibold text-muted">
+                            Status
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(labResult.lab_values).map(
+                          ([testName, details]) => {
+                            const lab = details as {
+                              value?: number | string;
+                              unit?: string;
+                              reference?: string;
+                              status?: string;
+                            };
+                            const isAbnormal =
+                              lab.status === "high" || lab.status === "low";
+                            return (
+                              <tr
+                                key={testName}
+                                className={`border-b border-border/50 ${isAbnormal ? "bg-red-50/50" : ""}`}
+                              >
+                                <td
+                                  className={`py-1.5 pr-3 font-medium ${isAbnormal ? "text-danger" : "text-foreground"}`}
+                                >
+                                  {testName}
+                                </td>
+                                <td
+                                  className={`py-1.5 pr-3 ${isAbnormal ? "text-danger font-semibold" : "text-foreground"}`}
+                                >
+                                  {lab.value ?? "—"}
+                                </td>
+                                <td className="py-1.5 pr-3 text-muted">
+                                  {lab.unit ?? "—"}
+                                </td>
+                                <td className="py-1.5 pr-3 text-muted">
+                                  {lab.reference ?? "—"}
+                                </td>
+                                <td className="py-1.5">
+                                  {lab.status && (
+                                    <Chip
+                                      size="sm"
+                                      variant="flat"
+                                      color={
+                                        lab.status === "high"
+                                          ? "danger"
+                                          : lab.status === "low"
+                                            ? "warning"
+                                            : "success"
+                                      }
+                                    >
+                                      {lab.status === "high"
+                                        ? "H"
+                                        : lab.status === "low"
+                                          ? "L"
+                                          : "N"}
+                                    </Chip>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          },
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Abnormal Values Summary */}
                   {labResult.abnormal_values.length > 0 && (
-                    <Chip size="sm" variant="flat" color="danger">
-                      {labResult.abnormal_values.length} abnormal
-                    </Chip>
+                    <>
+                      <div className="border-t border-border" />
+                      <div>
+                        <p className="text-xs text-muted mb-1.5">
+                          Flagged Abnormal:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {labResult.abnormal_values.map((name, i) => (
+                            <Chip
+                              key={i}
+                              size="sm"
+                              variant="flat"
+                              color="danger"
+                            >
+                              {name}
+                            </Chip>
+                          ))}
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
-
-                {/* Lab Values Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-1.5 pr-3 font-semibold text-muted">Test</th>
-                        <th className="text-left py-1.5 pr-3 font-semibold text-muted">Value</th>
-                        <th className="text-left py-1.5 pr-3 font-semibold text-muted">Unit</th>
-                        <th className="text-left py-1.5 pr-3 font-semibold text-muted">Reference</th>
-                        <th className="text-left py-1.5 font-semibold text-muted">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(labResult.lab_values).map(([testName, details]) => {
-                        const lab = details as { value?: number | string; unit?: string; reference?: string; status?: string };
-                        const isAbnormal = lab.status === "high" || lab.status === "low";
-                        return (
-                          <tr
-                            key={testName}
-                            className={`border-b border-border/50 ${isAbnormal ? "bg-red-50/50" : ""}`}
-                          >
-                            <td className={`py-1.5 pr-3 font-medium ${isAbnormal ? "text-danger" : "text-foreground"}`}>
-                              {testName}
-                            </td>
-                            <td className={`py-1.5 pr-3 ${isAbnormal ? "text-danger font-semibold" : "text-foreground"}`}>
-                              {lab.value ?? "—"}
-                            </td>
-                            <td className="py-1.5 pr-3 text-muted">{lab.unit ?? "—"}</td>
-                            <td className="py-1.5 pr-3 text-muted">{lab.reference ?? "—"}</td>
-                            <td className="py-1.5">
-                              {lab.status && (
-                                <Chip
-                                  size="sm"
-                                  variant="flat"
-                                  color={
-                                    lab.status === "high" ? "danger"
-                                    : lab.status === "low" ? "warning"
-                                    : "success"
-                                  }
-                                >
-                                  {lab.status === "high" ? "H" : lab.status === "low" ? "L" : "N"}
-                                </Chip>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Abnormal Values Summary */}
-                {labResult.abnormal_values.length > 0 && (
-                  <>
-                    <div className="border-t border-border" />
-                    <div>
-                      <p className="text-xs text-muted mb-1.5">Flagged Abnormal:</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {labResult.abnormal_values.map((name, i) => (
-                          <Chip key={i} size="sm" variant="flat" color="danger">
-                            {name}
-                          </Chip>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
+              )}
 
             {/* Patient History */}
             <div className="space-y-2">
-              <label htmlFor="patient-history" className="text-sm font-medium text-foreground">
+              <label
+                htmlFor="patient-history"
+                className="text-sm font-medium text-foreground"
+              >
                 Patient History{" "}
-                {file && (isImageFile(file) || isLabFile(file))
-                  ? "(Optional — enhances analysis)"
-                  : "(Required)"}
+                {hasAnyFile ? "(Optional — enhances analysis)" : "(Required)"}
               </label>
               <textarea
                 id="patient-history"
@@ -503,7 +669,9 @@ export default function UploadPage() {
             <Button
               variant="solid"
               onPress={handleAnalyze}
-              isDisabled={(!file && !patientHistory.trim()) || isAnalyzing}
+              isDisabled={
+                (!hasAnyFile && !patientHistory.trim()) || isAnalyzing
+              }
               className={`min-w-[200px] font-semibold bg-teal text-white hover:bg-teal/90 rounded-lg px-6 py-2.5 text-sm transition-colors ${isAnalyzing ? "animate-pulse" : ""}`}
             >
               {isAnalyzing ? "Analyzing..." : "Analyze & Begin Debate"}

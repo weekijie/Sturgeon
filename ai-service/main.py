@@ -385,6 +385,42 @@ def _is_pure_refusal(text: str) -> bool:
     return len(cleaned) < 50
 
 
+def _strip_refusal_preamble(text: str) -> str:
+    """Strip leading refusal boilerplate when real analysis follows.
+    
+    Handles the 'refusal sandwich' pattern where MedGemma outputs:
+      "I am unable to provide a clinical interpretation... However,
+       I can provide a general description: [actual analysis]"
+    
+    Only strips the LEADING refusal prefix.  Trailing disclaimers
+    (e.g. "Disclaimer: This is not medical advice") are kept as-is — 
+    they are appropriate for a medical AI.
+    
+    Returns the original text unchanged if no preamble pattern is found.
+    """
+    # Pattern: refusal text ending with a "However" / "That said" transition
+    # that introduces the real analysis.
+    preamble_pattern = re.compile(
+        r'^.*?'                                  # refusal text (non-greedy)
+        r'(?:However|That said|Nevertheless|With that (?:said|in mind)),?\s*'  # transition
+        r'(?:I can |I am able to |here is |below is )?',  # optional lead-in
+        re.IGNORECASE | re.DOTALL
+    )
+    
+    match = preamble_pattern.match(text)
+    if match:
+        remaining = text[match.end():]
+        # Only strip if there's substantial content after the preamble
+        if len(remaining.strip()) > 100:
+            # Capitalize the first letter of the remaining text
+            cleaned = remaining.strip()
+            if cleaned:
+                cleaned = cleaned[0].upper() + cleaned[1:]
+            return cleaned
+    
+    return text
+
+
 def format_lab_values(lab_values: dict) -> str:
     """Format lab values dict into readable text."""
     lines = []
@@ -836,6 +872,13 @@ Be specific and cite visible features in the image."""
         except Exception as e:
             logger.warning(f"Retry failed: {e}")
     
+    # Strip leading refusal preamble ("I am unable to... However, ...")
+    # when real analysis follows.  Trailing disclaimers are kept.
+    original_len = len(medgemma_analysis)
+    medgemma_analysis = _strip_refusal_preamble(medgemma_analysis)
+    if len(medgemma_analysis) < original_len:
+        logger.info(f"Stripped refusal preamble ({original_len} → {len(medgemma_analysis)} chars)")
+    
     return ImageAnalysisResponse(
         image_type=triage_result.get("image_type", "medical image"),
         image_type_confidence=triage_result.get("image_type_confidence", 0.0),
@@ -866,7 +909,7 @@ async def generate_summary(request: SummaryRequest):
         debate_rounds=formatted_rounds
     )
     
-    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048)
+    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=3072)
     data = extract_json(response)
     
     # Handle ruled_out which may be list of strings or list of dicts
