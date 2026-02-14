@@ -8,19 +8,44 @@ import Prose from "../../components/Prose";
 
 type Probability = "high" | "medium" | "low";
 
-function ProbabilityBadge({ level }: { level: Probability }) {
-  const colorClasses = {
-    high: "bg-green-100 text-green-700 border border-green-200",
-    medium: "bg-amber-100 text-amber-700 border border-amber-200",
-    low: "bg-red-100 text-red-700 border border-red-200",
+// 1H: Probability bar with percentage
+function ProbabilityBar({ level, previousLevel }: { level: Probability; previousLevel?: Probability }) {
+  const percentMap: Record<Probability, number> = { high: 85, medium: 55, low: 25 };
+  const colorMap: Record<Probability, string> = {
+    high: "bg-green-500",
+    medium: "bg-amber-500",
+    low: "bg-red-400",
   };
+  const percent = percentMap[level] || 55;
+  const prevPercent = previousLevel ? percentMap[previousLevel] : undefined;
+  const changed = prevPercent !== undefined && prevPercent !== percent;
+  const increased = changed && percent > (prevPercent ?? 0);
 
   return (
-    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${colorClasses[level]}`}>
-      {level.charAt(0).toUpperCase() + level.slice(1)}
-    </span>
+    <div className="flex items-center gap-2 w-full">
+      <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-700 ${colorMap[level]} ${changed ? (increased ? "ring-2 ring-green-300" : "ring-2 ring-red-300") : ""}`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <span className={`text-[10px] font-semibold w-8 text-right ${
+        level === "high" ? "text-green-600" : level === "medium" ? "text-amber-600" : "text-red-500"
+      }`}>
+        {level.charAt(0).toUpperCase() + level.slice(1)}
+      </span>
+    </div>
   );
 }
+
+// 1B: Suggested challenge prompts
+const SUGGESTED_PROMPTS = [
+  "What test would help differentiate these diagnoses?",
+  "What evidence argues against the top diagnosis?",
+  "Could this be an autoimmune condition instead?",
+  "What if we consider the patient's demographics?",
+  "Summarize the key findings supporting your leading diagnosis",
+];
 
 interface Message {
   role: "user" | "ai" | "error";
@@ -35,9 +60,11 @@ export default function DebatePage() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
+  const [previousDiagnoses, setPreviousDiagnoses] = useState<Diagnosis[]>([]); // 1H: track changes
   const [isOrchestrated, setIsOrchestrated] = useState(false);
   const [suggestedTest, setSuggestedTest] = useState<string | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // 1F: mobile sidebar toggle
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Hydration guard: localStorage data isn't available during SSR
@@ -136,14 +163,15 @@ export default function DebatePage() {
       // Remove leading { "ai_response": " prefix if present
       const prefixMatch = aiText.match(/^\s*\{\s*"ai_response"\s*:\s*"?([\s\S]*)/);
       if (prefixMatch) {
-        aiText = prefixMatch[1].replace(/"\s*,?\s*"(updated_differential|suggested_test|medgemma_query)[\s\S]*$/, "").replace(/["\s}]+$/, "");
+        aiText = prefixMatch[1].replace(/"?\s*,?\s*"(updated_differential|suggested_test|medgemma_query)[\s\S]*$/, "").replace(/["\s}]+$/, "");
       }
 
       // Add AI response to messages
       setMessages((prev) => [...prev, { role: "ai", content: aiText }]);
       
-      // Update differential if changed
+      // 1H: Track previous differential for change highlighting
       if (data.updated_differential?.length > 0) {
+        setPreviousDiagnoses(diagnoses);
         setDiagnoses(data.updated_differential);
         updateDifferential(data.updated_differential);
       }
@@ -171,6 +199,12 @@ export default function DebatePage() {
     doSend(userMessage);
   };
 
+  // 1B: Handle suggested prompt click
+  const handleSuggestedPrompt = (prompt: string) => {
+    if (isLoading) return;
+    doSend(prompt);
+  };
+
   const handleRetry = () => {
     // Find the last user message, remove it + the error, then re-send
     const reversed = [...messages].reverse();
@@ -190,17 +224,33 @@ export default function DebatePage() {
     router.push("/summary");
   };
 
+  // Helper: find previous probability for a diagnosis name
+  const getPreviousLevel = (name: string): Probability | undefined => {
+    const prev = previousDiagnoses.find(d => d.name === name);
+    return prev?.probability;
+  };
+
   return (
     <main className="min-h-screen flex flex-col bg-white">
       {/* Header */}
-      <header className="sticky top-[3px] z-50 border-b border-border bg-white px-6 py-4 shadow-sm">
+      <header className="sticky top-[3px] z-50 border-b border-border bg-white px-4 md:px-6 py-4 shadow-sm">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight text-foreground">
-              <span className="text-teal">Sturgeon</span> Diagnostic Debate
+            {/* 1F: Mobile sidebar toggle */}
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="md:hidden text-muted hover:text-foreground p-1"
+              aria-label="Toggle sidebar"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <h1 className="text-lg md:text-xl font-bold tracking-tight text-foreground">
+              <span className="text-teal">Sturgeon</span> <span className="hidden sm:inline">Diagnostic</span> Debate
             </h1>
             {isOrchestrated && (
-              <span className="text-[10px] font-medium text-teal bg-teal-light px-2 py-0.5 rounded-full border border-teal/20">
+              <span className="text-[10px] font-medium text-teal bg-teal-light px-2 py-0.5 rounded-full border border-teal/20 hidden sm:inline">
                 Agentic Mode
               </span>
             )}
@@ -209,17 +259,32 @@ export default function DebatePage() {
             variant="bordered" 
             size="sm" 
             onPress={handleEndSession}
-            className="border-border text-foreground hover:border-teal hover:text-teal hover:bg-teal-light/30 transition-colors"
+            className="border-border text-foreground hover:border-teal hover:text-teal hover:bg-teal-light/30 transition-colors text-xs md:text-sm"
           >
-            End Session & Summarize
+            <span className="hidden sm:inline">End Session & </span>Summarize
           </Button>
         </div>
       </header>
 
       {/* Main Content - Split Layout */}
-      <div className="flex-1 flex max-w-7xl mx-auto w-full">
+      <div className="flex-1 flex max-w-7xl mx-auto w-full relative">
+        {/* 1F: Mobile sidebar overlay */}
+        {sidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/30 z-30 md:hidden" 
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* Left Panel - Differential Diagnoses */}
-        <aside className="w-80 border-r border-border bg-surface p-4 overflow-y-auto h-[calc(100vh-52px-3px)] sticky top-[calc(52px+3px)]">
+        <aside className={`
+          w-80 border-r border-border bg-surface p-4 overflow-y-auto 
+          h-[calc(100vh-52px-3px)] sticky top-[calc(52px+3px)]
+          ${/* 1F: Mobile responsiveness */""}
+          fixed md:static z-40 md:z-auto
+          transition-transform duration-200 ease-in-out
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+        `}>
           {/* Uploaded Image Preview */}
           {hasMounted && caseData.imagePreviewUrl && (
             <div className="mb-4">
@@ -308,33 +373,38 @@ export default function DebatePage() {
                 key={idx}
                 className={`p-3 bg-white border border-border shadow-sm cursor-default ${idx === 0 ? "border-l-4 border-l-teal" : ""}`}
               >
-                <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-start justify-between gap-2 mb-1">
                   <h3 className="font-medium text-sm leading-tight text-foreground">{dx.name}</h3>
-                  <ProbabilityBadge level={dx.probability} />
                 </div>
-                {/* Supporting evidence */}
+                {/* 1H: Probability bar */}
+                <div className="mb-2">
+                  <ProbabilityBar level={dx.probability} previousLevel={getPreviousLevel(dx.name)} />
+                </div>
+                {/* 1H: Collapsible evidence sections */}
                 {dx.supporting_evidence?.length > 0 && (
-                  <div className="mb-1.5">
-                    <p className="text-[10px] text-success font-medium uppercase tracking-wider mb-0.5">Supporting</p>
-                    <ul className="text-xs text-muted leading-relaxed space-y-0.5">
+                  <details className="mb-1">
+                    <summary className="text-[10px] text-success font-medium uppercase tracking-wider cursor-pointer select-none hover:text-success/80">
+                      Supporting ({dx.supporting_evidence.length})
+                    </summary>
+                    <ul className="text-xs text-muted leading-relaxed space-y-0.5 mt-1 ml-2">
                       {dx.supporting_evidence.map((ev, i) => (
                         <li key={i} className="flex gap-1"><span className="text-success shrink-0">+</span> {ev}</li>
                       ))}
                     </ul>
-                  </div>
+                  </details>
                 )}
-                {/* Against evidence */}
                 {dx.against_evidence?.length > 0 && (
-                  <div className="mb-1.5">
-                    <p className="text-[10px] text-danger font-medium uppercase tracking-wider mb-0.5">Against</p>
-                    <ul className="text-xs text-muted leading-relaxed space-y-0.5">
+                  <details className="mb-1">
+                    <summary className="text-[10px] text-danger font-medium uppercase tracking-wider cursor-pointer select-none hover:text-danger/80">
+                      Against ({dx.against_evidence.length})
+                    </summary>
+                    <ul className="text-xs text-muted leading-relaxed space-y-0.5 mt-1 ml-2">
                       {dx.against_evidence.map((ev, i) => (
                         <li key={i} className="flex gap-1"><span className="text-danger shrink-0">-</span> {ev}</li>
                       ))}
                     </ul>
-                  </div>
+                  </details>
                 )}
-                {/* Suggested tests */}
                 {dx.suggested_tests?.length > 0 && (
                   <div>
                     <p className="text-[10px] text-teal font-medium uppercase tracking-wider mb-0.5">Tests</p>
@@ -349,15 +419,15 @@ export default function DebatePage() {
         </aside>
 
         {/* Right Panel - Chat */}
-        <section className="flex-1 flex flex-col">
+        <section className="flex-1 flex flex-col min-w-0">
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
             {messages.map((msg, idx) => (
               <div
                 key={idx}
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div className="max-w-[70%]">
+                <div className="max-w-[85%] md:max-w-[70%]">
                   {/* Label */}
                   <p className={`text-[10px] font-medium uppercase tracking-wider mb-1 ${
                     msg.role === "user" ? "text-right text-muted" : msg.role === "error" ? "text-danger" : "text-teal"
@@ -379,7 +449,7 @@ export default function DebatePage() {
                   ) : msg.role === "user" ? (
                     /* User message */
                     <div className="bg-accent text-white rounded-xl px-4 py-3">
-                      <p className="text-sm leading-relaxed break-words">{msg.content}</p>
+                      <p className="text-sm leading-relaxed wrap-break-word">{msg.content}</p>
                     </div>
                   ) : (
                     /* AI message */
@@ -392,7 +462,7 @@ export default function DebatePage() {
             ))}
             {isLoading && (
               <div className="flex justify-start">
-                <div className="max-w-[70%]">
+                <div className="max-w-[85%] md:max-w-[70%]">
                   <p className="text-[10px] font-medium uppercase tracking-wider mb-1 text-teal">
                     Sturgeon AI
                   </p>
@@ -415,7 +485,7 @@ export default function DebatePage() {
           </div>
 
           {/* Input */}
-          <div className="border-t border-border p-4 bg-white">
+          <div className="border-t border-border p-3 md:p-4 bg-white">
             {/* Suggested test banner */}
             {suggestedTest && !isLoading && (
               <div className="max-w-4xl mx-auto mb-3 px-3 py-2 bg-teal-light/40 border border-teal/20 rounded-lg flex items-center gap-2">
@@ -423,6 +493,22 @@ export default function DebatePage() {
                 <span className="text-sm text-foreground">{suggestedTest}</span>
               </div>
             )}
+
+            {/* 1B: Suggested challenge prompts */}
+            {!isLoading && messages.length > 0 && (
+              <div className="max-w-4xl mx-auto mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                {SUGGESTED_PROMPTS.map((prompt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleSuggestedPrompt(prompt)}
+                    className="shrink-0 text-xs px-3 py-1.5 rounded-full border border-teal/30 text-teal hover:bg-teal hover:text-white transition-colors whitespace-nowrap"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="flex gap-3 max-w-4xl mx-auto">
               <Input
                 className="flex-1"
@@ -436,7 +522,7 @@ export default function DebatePage() {
                 variant="solid" 
                 onPress={handleSend} 
                 isDisabled={isLoading || !input.trim()}
-                className="bg-teal text-white hover:bg-teal/90 font-semibold px-6 rounded-lg"
+                className="bg-teal text-white hover:bg-teal/90 font-semibold px-4 md:px-6 rounded-lg"
               >
                 Send &rarr;
               </Button>

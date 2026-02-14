@@ -48,7 +48,7 @@ function ExpandableText({
         ) : (
           <>
             <Prose content={text.slice(0, previewLength) + "..."} />
-            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent" />
+            <div className="absolute bottom-0 left-0 right-0 h-12 bg-linear-to-t from-white to-transparent" />
           </>
         )}
       </div>
@@ -152,7 +152,11 @@ export default function UploadPage() {
   }, [clearImage, clearLab]);
 
   const handleAnalyze = async () => {
-    if (!imageFile && !labFile && !patientHistory.trim()) return;
+    // 1A: Input validation — require at least some evidence
+    if (!imageFile && !labFile && !patientHistory.trim()) {
+      setError("Please provide at least a patient history or upload evidence (image or lab report) before analyzing.");
+      return;
+    }
 
     setIsAnalyzing(true);
     setError(null);
@@ -651,7 +655,10 @@ export default function UploadPage() {
                 placeholder="Enter relevant patient history, symptoms, medications, previous diagnoses..."
                 rows={4}
                 value={patientHistory}
-                onChange={(e) => setPatientHistoryLocal(e.target.value)}
+                onChange={(e) => {
+                  setPatientHistoryLocal(e.target.value);
+                  if (error) setError(null);
+                }}
                 className="w-full rounded-lg bg-white border border-border px-4 py-3 text-sm text-foreground placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-teal/40 focus:border-teal resize-none transition-colors"
               />
             </div>

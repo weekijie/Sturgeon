@@ -20,6 +20,7 @@ class MedGemmaModel:
         self.model = None
         self.processor = None
         self.device = None
+        self.dtype = None
     
     def load(self, model_id: str = "google/medgemma-1.5-4b-it"):
         """Load MedGemma model with FP16 precision."""
@@ -33,13 +34,22 @@ class MedGemmaModel:
             self.device = "cpu"
             logger.warning("CUDA not available, using CPU (will be slow)")
         
+        # Auto-detect precision:
+        #   bfloat16 → AMD ROCm, NVIDIA Ampere+ (A100, RTX 3090+)
+        #   float16  → NVIDIA Turing (T4, GTX 1660, RTX 2080)
+        if self.device == "cuda" and torch.cuda.is_bf16_supported():
+            self.dtype = torch.bfloat16
+        else:
+            self.dtype = torch.float16
+        logger.info(f"Using precision: {self.dtype}")
+        
         # Load processor (replaces tokenizer for vision-language models)
         self.processor = AutoProcessor.from_pretrained(model_id)
         
-        # Load model with bfloat16 (required for AMD GPUs with ROCm)
+        # Load model with auto-detected precision
         self.model = AutoModelForImageTextToText.from_pretrained(
             model_id,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=self.dtype,
             device_map="auto",
             trust_remote_code=True
         )
@@ -94,7 +104,7 @@ class MedGemmaModel:
             tokenize=True,
             return_dict=True,
             return_tensors="pt"
-        ).to(self.model.device, dtype=torch.bfloat16)
+        ).to(self.model.device, dtype=self.dtype)
         
         input_len = inputs["input_ids"].shape[-1]
         

@@ -28,6 +28,18 @@ Return as structured JSON with this format:
   "abnormal_values": ["list of abnormal test names"]
 }}
 
+Example input/output:
+Input: "WBC 11.2 x10^9/L (4.0-11.0), Hemoglobin 14.5 g/dL (13.5-17.5), CRP 45 mg/L (0-5)"
+Output:
+{{
+  "lab_values": {{
+    "WBC": {{"value": 11.2, "unit": "x10^9/L", "reference": "4.0-11.0", "status": "high"}},
+    "Hemoglobin": {{"value": 14.5, "unit": "g/dL", "reference": "13.5-17.5", "status": "normal"}},
+    "CRP": {{"value": 45, "unit": "mg/L", "reference": "0-5", "status": "high"}}
+  }},
+  "abnormal_values": ["WBC", "CRP"]
+}}
+
 Report:
 {lab_report_text}
 
@@ -41,23 +53,30 @@ Patient History:
 Lab Values:
 {formatted_lab_values}
 
-For each diagnosis, provide:
-1. Diagnosis name (short)
-2. Probability: "high", "medium", or "low"
-3. Supporting evidence: 2-3 brief phrases
-4. Against evidence: 1-2 brief phrases
-5. Suggested tests: 1-2 test names
+Before generating diagnoses, think step by step:
+1. What are the key abnormal findings?
+2. What conditions could explain ALL of these findings together?
+3. What conditions explain only SOME findings (and which findings argue against them)?
 
-IMPORTANT: Keep evidence phrases SHORT (under 15 words each). Return ONLY valid JSON, no extra text.
+Then provide your differential in this EXACT JSON format. Keep evidence phrases SHORT (under 15 words each).
+Return ONLY valid JSON, no extra text.
 
+Example:
 {{
   "diagnoses": [
     {{
-      "name": "Diagnosis Name",
+      "name": "Iron Deficiency Anemia",
       "probability": "high",
-      "supporting_evidence": ["brief evidence 1", "brief evidence 2"],
-      "against_evidence": ["brief counter 1"],
-      "suggested_tests": ["test 1"]
+      "supporting_evidence": ["Low hemoglobin at 8.2 g/dL", "Low ferritin at 12 ng/mL", "Fatigue and pallor reported"],
+      "against_evidence": ["Normal MCV could suggest other type"],
+      "suggested_tests": ["Iron studies", "Reticulocyte count"]
+    }},
+    {{
+      "name": "Chronic Disease Anemia",
+      "probability": "medium",
+      "supporting_evidence": ["Low hemoglobin with elevated CRP", "History of chronic inflammation"],
+      "against_evidence": ["Ferritin typically normal or elevated in ACD"],
+      "suggested_tests": ["TIBC", "Serum iron"]
     }}
   ]
 }}
@@ -77,6 +96,9 @@ Current Differential:
 
 Previous Reasoning:
 {previous_rounds}
+
+Image Analysis (if available):
+{image_context}
 
 The clinician challenges your thinking:
 "{user_challenge}"
@@ -125,14 +147,22 @@ Provide:
 3. What was ruled out and why
 4. Recommended next steps
 
+Rate confidence as "high" (>85% certainty), "medium" (50-85%), or "low" (<50%).
+Also provide a confidence_percent (integer 0-100) based on:
+- Strength of supporting evidence
+- Number of alternative diagnoses remaining
+- Whether confirmatory testing has been done
+
 Return as JSON:
 {{
   "final_diagnosis": "Diagnosis name",
   "confidence": "high|medium|low",
+  "confidence_percent": 75,
   "reasoning_chain": ["step 1", "step 2", "step 3"],
   "ruled_out": ["diagnosis: reason"],
   "next_steps": ["action 1", "action 2"]
 }}
 
 JSON Response:"""
-
+"""
+"""

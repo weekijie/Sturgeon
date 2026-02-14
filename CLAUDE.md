@@ -168,7 +168,7 @@ Sturgeon/
 
 ### Next Steps (Priority Order)
 
-1. [ ] Get higher-res breast carcinoma test image (current is 50×50px)
+1. [x] Get higher-res breast carcinoma test image (current is 50×50px)
 2. [ ] Prepare demo script (`DEMO_SCRIPT.md`)
 3. [ ] Record demo video (≤3 min)
 4. [ ] Write submission document

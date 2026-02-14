@@ -132,7 +132,13 @@ export function CaseProvider({ children }: { children: ReactNode }) {
   };
 
   const setDifferential = (diagnoses: Diagnosis[]) => {
-    setCaseDataAndPersist((prev) => ({ ...prev, differential: diagnoses }));
+    // New differential = new analysis session → clear stale debate state
+    setCaseDataAndPersist((prev) => ({
+      ...prev,
+      differential: diagnoses,
+      debateRounds: [],
+      sessionId: null,
+    }));
   };
 
   const addDebateRound = (round: DebateRound) => {

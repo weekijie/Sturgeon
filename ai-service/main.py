@@ -8,14 +8,11 @@ Architecture:
 """
 from fastapi import FastAPI, HTTPException, UploadFile, File as FastAPIFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
 from contextlib import asynccontextmanager
 from PIL import Image
 import asyncio
 import logging
-import json
-import re
+import time
 import os
 import uuid
 import io
@@ -24,19 +21,37 @@ import io
 from dotenv import load_dotenv
 load_dotenv()
 
-from .medgemma import get_model
-from .medsiglip import get_siglip
-from .gemini_orchestrator import (
-    get_orchestrator,
-    ClinicalState,
-)
-from .prompts import (
-    SYSTEM_PROMPT,
-    EXTRACT_LABS_PROMPT,
-    DIFFERENTIAL_PROMPT,
-    DEBATE_TURN_PROMPT,
-    SUMMARY_PROMPT
-)
+# Imports - handle both package-style and direct invocation
+# When run as: python -m uvicorn "ai-service.main:app" → relative imports fail
+# because "ai-service" has a hyphen. Use try/except to handle both cases.
+try:
+    from medgemma import get_model
+    from medsiglip import get_siglip
+    from gemini_orchestrator import get_orchestrator, ClinicalState
+    from prompts import (SYSTEM_PROMPT, EXTRACT_LABS_PROMPT, DIFFERENTIAL_PROMPT,
+                         DEBATE_TURN_PROMPT, SUMMARY_PROMPT)
+    from models import (ExtractLabsRequest, ExtractLabsResponse, ExtractLabsFileResponse,
+                        DifferentialRequest, Diagnosis, DifferentialResponse,
+                        DebateTurnRequest, DebateTurnResponse,
+                        SummaryRequest, SummaryResponse,
+                        ImageFinding, ImageAnalysisResponse)
+    from json_utils import extract_json
+    from refusal import is_pure_refusal, strip_refusal_preamble
+    from formatters import format_lab_values, format_differential, format_rounds
+except ImportError:
+    from .medgemma import get_model
+    from .medsiglip import get_siglip
+    from .gemini_orchestrator import get_orchestrator, ClinicalState
+    from .prompts import (SYSTEM_PROMPT, EXTRACT_LABS_PROMPT, DIFFERENTIAL_PROMPT,
+                          DEBATE_TURN_PROMPT, SUMMARY_PROMPT)
+    from .models import (ExtractLabsRequest, ExtractLabsResponse, ExtractLabsFileResponse,
+                         DifferentialRequest, Diagnosis, DifferentialResponse,
+                         DebateTurnRequest, DebateTurnResponse,
+                         SummaryRequest, SummaryResponse,
+                         ImageFinding, ImageAnalysisResponse)
+    from .json_utils import extract_json
+    from .refusal import is_pure_refusal, strip_refusal_preamble
+    from .formatters import format_lab_values, format_differential, format_rounds
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -99,363 +114,19 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Sturgeon AI Service",
     description="Gemini-orchestrated, MedGemma-powered diagnostic debate API",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan
 )
 
 # CORS for Next.js frontend
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# Request/Response Models
-class ExtractLabsRequest(BaseModel):
-    lab_report_text: str
-
-class ExtractLabsResponse(BaseModel):
-    lab_values: dict
-    abnormal_values: list[str]
-
-class ExtractLabsFileResponse(BaseModel):
-    lab_values: dict
-    abnormal_values: list[str]
-    raw_text: str  # Extracted text from the file for transparency
-
-class DifferentialRequest(BaseModel):
-    patient_history: str
-    lab_values: dict
-
-class Diagnosis(BaseModel):
-    name: str
-    probability: str  # "high", "medium", "low"
-    supporting_evidence: list[str]
-    against_evidence: list[str]
-    suggested_tests: list[str]
-
-class DifferentialResponse(BaseModel):
-    diagnoses: list[Diagnosis]
-
-class DebateTurnRequest(BaseModel):
-    patient_history: str
-    lab_values: dict
-    current_differential: list[Diagnosis]
-    previous_rounds: list[dict]
-    user_challenge: str
-    session_id: Optional[str] = None  # For session state tracking
-    image_context: Optional[str] = None  # MedSigLIP + MedGemma image findings
-
-class DebateTurnResponse(BaseModel):
-    ai_response: str
-    updated_differential: list[Diagnosis]
-    suggested_test: Optional[str] = None
-    session_id: Optional[str] = None  # Returned for session continuity
-    orchestrated: bool = False  # Whether Gemini orchestrator was used
-
-class SummaryRequest(BaseModel):
-    patient_history: str
-    lab_values: dict
-    final_differential: list[Diagnosis]
-    debate_rounds: list[dict]
-
-class SummaryResponse(BaseModel):
-    final_diagnosis: str
-    confidence: str
-    reasoning_chain: list[str]
-    ruled_out: list[str]
-    next_steps: list[str]
-
-
-class ImageFinding(BaseModel):
-    label: str
-    score: float
-
-class ImageAnalysisResponse(BaseModel):
-    image_type: str
-    image_type_confidence: float
-    modality: str
-    triage_findings: list[ImageFinding]
-    triage_summary: str
-    medgemma_analysis: str
-
-
-def _repair_truncated_json(text: str) -> str:
-    """Repair JSON that was truncated mid-generation by closing open structures.
-    
-    Strategy: walk the string tracking open brackets/braces/strings,
-    then append the necessary closing tokens.
-    """
-    # Strip trailing whitespace and incomplete tokens
-    text = text.rstrip()
-    # Remove trailing comma (common before truncation)
-    text = re.sub(r',\s*$', '', text)
-    
-    # If we're inside a string value that was truncated, close it
-    # Count unescaped quotes to determine if we're inside a string
-    in_string = False
-    i = 0
-    while i < len(text):
-        c = text[i]
-        if c == '\\' and in_string:
-            i += 2  # skip escaped char
-            continue
-        if c == '"':
-            in_string = not in_string
-        i += 1
-    
-    if in_string:
-        text += '"'
-    
-    # Now close any open brackets/braces
-    stack = []
-    in_str = False
-    i = 0
-    while i < len(text):
-        c = text[i]
-        if c == '\\' and in_str:
-            i += 2
-            continue
-        if c == '"':
-            in_str = not in_str
-        elif not in_str:
-            if c in ('{', '['):
-                stack.append(c)
-            elif c == '}' and stack and stack[-1] == '{':
-                stack.pop()
-            elif c == ']' and stack and stack[-1] == '[':
-                stack.pop()
-        i += 1
-    
-    # Close in reverse order
-    for opener in reversed(stack):
-        text += ']' if opener == '[' else '}'
-    
-    return text
-
-
-def _fix_newlines_in_json_strings(text: str) -> str:
-    """Replace literal newlines inside JSON string values with spaces.
-    
-    Walks the text character-by-character, tracking whether we're inside
-    a quoted string.  Any \\n found inside a string is replaced with a space.
-    This is more robust than regex which can't reliably detect string boundaries
-    (e.g. newlines after punctuation like '),' were missed by the old approach).
-    """
-    result = []
-    in_string = False
-    i = 0
-    while i < len(text):
-        c = text[i]
-        if c == '\\' and in_string and i + 1 < len(text):
-            # Escaped character inside string — keep both chars as-is
-            result.append(c)
-            result.append(text[i + 1])
-            i += 2
-            continue
-        if c == '"':
-            in_string = not in_string
-        if c == '\n' and in_string:
-            result.append(' ')
-        else:
-            result.append(c)
-        i += 1
-    return ''.join(result)
-
-
-def extract_json(text: str) -> dict:
-    """Extract JSON from model response with robust repair for truncated output.
-    
-    Handles: markdown code blocks, truncated JSON, missing commas,
-    trailing commas, and unbalanced braces.
-    """
-    # Try to find JSON in code blocks first
-    json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
-    if json_match:
-        text = json_match.group(1)
-    
-    # Find the first { and last }
-    start = text.find('{')
-    end = text.rfind('}')
-    if start != -1 and end != -1:
-        text = text[start:end + 1]
-    elif start != -1:
-        # No closing brace — truncated output
-        text = text[start:]
-    else:
-        logger.error(f"No JSON object found in response: {text[:200]}...")
-        raise HTTPException(status_code=500, detail="Model response contained no JSON")
-    
-    # Pre-process: fix literal newlines inside JSON string values.
-    # MedGemma wraps long strings across lines (e.g. reasoning_chain entries),
-    # which is invalid JSON.  Walk the text tracking quote boundaries and
-    # replace any \n found inside a string with a space.
-    text = _fix_newlines_in_json_strings(text)
-    
-    # Attempt 1: direct parse
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as e:
-        logger.warning(f"JSON parse error (attempt 1 - direct): {e}")
-    
-    # Attempt 2: fix missing commas between key-value pairs
-    try:
-        fixed = re.sub(r'"\s*\n\s*"', '",\n"', text)
-        # Also fix trailing commas before closing brackets
-        fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
-        return json.loads(fixed)
-    except json.JSONDecodeError as e:
-        logger.warning(f"JSON parse error (attempt 2 - comma fix): {e}")
-    
-    # Attempt 3: repair truncated JSON by closing open structures
-    try:
-        repaired = _repair_truncated_json(text)
-        # Clean trailing commas that appear before closing brackets
-        repaired = re.sub(r',\s*([}\]])', r'\1', repaired)
-        result = json.loads(repaired)
-        logger.info("JSON successfully repaired from truncated output")
-        return result
-    except json.JSONDecodeError as e:
-        logger.warning(f"JSON parse error (attempt 3 - truncation repair): {e}")
-    
-    # Attempt 4: aggressive — extract whatever valid diagnoses we can
-    # Look for complete diagnosis objects within the text
-    try:
-        diagnoses = []
-        # Find all complete JSON objects that look like diagnoses
-        pattern = r'\{[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*\}'
-        matches = re.findall(pattern, text, re.DOTALL)
-        for match in matches:
-            try:
-                dx = json.loads(match)
-                diagnoses.append(dx)
-            except json.JSONDecodeError:
-                continue
-        if diagnoses:
-            logger.info(f"Extracted {len(diagnoses)} diagnoses via regex fallback")
-            return {"diagnoses": diagnoses}
-    except Exception:
-        pass
-    
-    logger.error(f"All JSON repair attempts failed.\nRaw text: {text[:500]}...")
-    raise HTTPException(status_code=500, detail="Failed to parse model response as JSON")
-
-
-def _is_pure_refusal(text: str) -> bool:
-    """Detect if MedGemma's output is a pure refusal with no real analysis.
-    
-    Returns True if the output is entirely disclaimers/refusal boilerplate
-    (e.g. "I am an AI and cannot provide medical advice.") with no
-    substantive clinical content.  Returns False if there IS useful
-    analysis — even if it starts with a disclaimer prefix.
-    
-    This is used to trigger a retry with a simpler prompt, NOT to
-    strip disclaimers from otherwise good output.  Medical AI
-    disclaimers are appropriate and should be shown to users.
-    """
-    disclaimer_patterns = [
-        r"(?:^|\n)\s*(?:I am|I'm) (?:a |an )?(?:large )?(?:language model|AI|artificial intelligence)[^.]*\.\s*",
-        r"(?:^|\n)\s*As an AI(?:\s+language model)?[^.]*\.\s*",
-        r"(?:^|\n)\s*(?:I'm not|I am not) a (?:medical |healthcare )?(?:professional|doctor|physician)[^.]*\.\s*",
-        r"(?:^|\n)\s*(?:This|The following) is not (?:intended as )?medical advice[^.]*\.\s*",
-        r"(?:^|\n)\s*(?:It is (?:essential|important) to |Please |Always )?consult (?:with )?(?:a |your )?(?:qualified )?(?:healthcare|medical) (?:professional|provider|doctor)[^.]*\.\s*",
-        r"(?:^|\n)\s*(?:I cannot|I can't) (?:provide|give|offer) medical (?:advice|diagnosis|treatment)[^.]*\.\s*",
-        r"(?:^|\n)\s*(?:I am unable|I'm unable) to provide (?:a )?(?:medical )?(?:diagnosis|interpretation|clinical interpretation)[^.]*\.\s*",
-        r"(?:^|\n)\s*This is because I (?:am|'m) an AI[^.]*\.\s*",
-        r"(?:^|\n)\s*Analyzing medical images requires[^.]*\.\s*",
-        r"(?:^|\n)\s*If you have a medical image[^.]*\.\s*",
-        r"(?:^|\n)\s*They can properly[^.]*\.\s*",
-        r"(?:^|\n)\s*\*{0,2}Disclaimer\*{0,2}:?\s*.*",
-        r"(?:^|\n)\s*(?:Important|Note):?\s*(?:I am|I'm|This is) (?:not |an )?(?:AI|a substitute)[^.]*\.\s*",
-    ]
-    
-    cleaned = text
-    for pattern in disclaimer_patterns:
-        flags = re.IGNORECASE | re.DOTALL if 'Disclaimer' in pattern else re.IGNORECASE
-        cleaned = re.sub(pattern, '\n', cleaned, flags=flags)
-    
-    # Clean up excess whitespace
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
-    
-    # If less than 50 chars remain after removing all disclaimers,
-    # the model produced no real analysis — it's a pure refusal.
-    return len(cleaned) < 50
-
-
-def _strip_refusal_preamble(text: str) -> str:
-    """Strip leading refusal boilerplate when real analysis follows.
-    
-    Handles the 'refusal sandwich' pattern where MedGemma outputs:
-      "I am unable to provide a clinical interpretation... However,
-       I can provide a general description: [actual analysis]"
-    
-    Only strips the LEADING refusal prefix.  Trailing disclaimers
-    (e.g. "Disclaimer: This is not medical advice") are kept as-is — 
-    they are appropriate for a medical AI.
-    
-    Returns the original text unchanged if no preamble pattern is found.
-    """
-    # Pattern: refusal text ending with a "However" / "That said" transition
-    # that introduces the real analysis.
-    preamble_pattern = re.compile(
-        r'^.*?'                                  # refusal text (non-greedy)
-        r'(?:However|That said|Nevertheless|With that (?:said|in mind)),?\s*'  # transition
-        r'(?:I can |I am able to |here is |below is )?',  # optional lead-in
-        re.IGNORECASE | re.DOTALL
-    )
-    
-    match = preamble_pattern.match(text)
-    if match:
-        remaining = text[match.end():]
-        # Only strip if there's substantial content after the preamble
-        if len(remaining.strip()) > 100:
-            # Capitalize the first letter of the remaining text
-            cleaned = remaining.strip()
-            if cleaned:
-                cleaned = cleaned[0].upper() + cleaned[1:]
-            return cleaned
-    
-    return text
-
-
-def format_lab_values(lab_values: dict) -> str:
-    """Format lab values dict into readable text."""
-    lines = []
-    for name, data in lab_values.items():
-        if isinstance(data, dict):
-            value = data.get('value', 'N/A')
-            unit = data.get('unit', '')
-            status = data.get('status', 'normal')
-            lines.append(f"- {name}: {value} {unit} ({status})")
-        else:
-            lines.append(f"- {name}: {data}")
-    return "\n".join(lines) if lines else "No lab values provided"
-
-
-def format_differential(diagnoses: list) -> str:
-    """Format differential list into readable text."""
-    lines = []
-    for i, dx in enumerate(diagnoses, 1):
-        if isinstance(dx, dict):
-            name = dx.get('name', 'Unknown')
-            prob = dx.get('probability', 'unknown')
-            lines.append(f"{i}. {name} (probability: {prob})")
-        elif hasattr(dx, 'name'):
-            lines.append(f"{i}. {dx.name} (probability: {dx.probability})")
-    return "\n".join(lines) if lines else "No differential yet"
-
-
-def format_rounds(rounds: list) -> str:
-    """Format debate rounds into readable text."""
-    lines = []
-    for i, r in enumerate(rounds, 1):
-        challenge = r.get('user_challenge', r.get('challenge', ''))
-        response = r.get('ai_response', r.get('response', ''))
-        lines.append(f"Round {i}:\nUser: {challenge}\nAI: {response}")
-    return "\n\n".join(lines) if lines else "No previous rounds"
 
 
 # Health check
@@ -478,16 +149,26 @@ async def extract_labs(request: ExtractLabsRequest):
     """Extract structured lab values from text."""
     logger.info(f"Extracting labs from text ({len(request.lab_report_text)} chars)")
     
-    model = get_model()
-    prompt = EXTRACT_LABS_PROMPT.format(lab_report_text=request.lab_report_text)
-    
-    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=1024, temperature=0.3)
-    data = extract_json(response)
-    
-    return ExtractLabsResponse(
-        lab_values=data.get("lab_values", {}),
-        abnormal_values=data.get("abnormal_values", [])
-    )
+    try:
+        t0 = time.time()
+        model = get_model()
+        prompt = EXTRACT_LABS_PROMPT.format(lab_report_text=request.lab_report_text)
+        
+        response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=1024, temperature=0.3)
+        t1 = time.time()
+        logger.info(f"[extract-labs] medgemma={t1-t0:.2f}s")
+        
+        data = extract_json(response)
+        
+        return ExtractLabsResponse(
+            lab_values=data.get("lab_values", {}),
+            abnormal_values=data.get("abnormal_values", [])
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Lab extraction failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Lab extraction error: {str(e)[:200]}")
 
 
 @app.post("/extract-labs-file", response_model=ExtractLabsFileResponse)
@@ -507,6 +188,7 @@ async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
     raw_text = ""
     
     try:
+        t0 = time.time()
         contents = await file.read()
         
         if filename.endswith(".pdf"):
@@ -551,12 +233,16 @@ async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
                 detail="Could not extract any text from the uploaded file"
             )
         
-        logger.info(f"Extracted {len(raw_text)} chars from {filename}")
+        t1 = time.time()
+        logger.info(f"[extract-labs-file] text_extraction={t1-t0:.2f}s ({len(raw_text)} chars from {filename})")
         
         # Send extracted text to MedGemma for structured lab parsing
         model = get_model()
         prompt = EXTRACT_LABS_PROMPT.format(lab_report_text=raw_text)
         response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048, temperature=0.3)
+        
+        t2 = time.time()
+        logger.info(f"[extract-labs-file] medgemma={t2-t1:.2f}s total={t2-t0:.2f}s")
         
         # Try parsing; if JSON extraction fails, retry once (MedGemma can be
         # inconsistent with long inputs on first attempt)
@@ -579,7 +265,7 @@ async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
         logger.error(f"Lab extraction failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to extract lab values: {str(e)}"
+            detail=f"Failed to extract lab values: {str(e)[:200]}"
         )
 
 
@@ -588,27 +274,39 @@ async def generate_differential(request: DifferentialRequest):
     """Generate initial differential diagnoses."""
     logger.info("Generating differential for patient history")
     
-    model = get_model()
-    formatted_labs = format_lab_values(request.lab_values)
-    prompt = DIFFERENTIAL_PROMPT.format(
-        patient_history=request.patient_history,
-        formatted_lab_values=formatted_labs
-    )
-    
-    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=3072, temperature=0.3)
-    data = extract_json(response)
-    
-    diagnoses = []
-    for dx in data.get("diagnoses", []):
-        diagnoses.append(Diagnosis(
-            name=dx.get("name", "Unknown"),
-            probability=dx.get("probability", "medium"),
-            supporting_evidence=dx.get("supporting_evidence", []),
-            against_evidence=dx.get("against_evidence", []),
-            suggested_tests=dx.get("suggested_tests", [])
-        ))
-    
-    return DifferentialResponse(diagnoses=diagnoses)
+    try:
+        t0 = time.time()
+        model = get_model()
+        formatted_labs = format_lab_values(request.lab_values)
+        prompt = DIFFERENTIAL_PROMPT.format(
+            patient_history=request.patient_history,
+            formatted_lab_values=formatted_labs
+        )
+        
+        response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=3072, temperature=0.3)
+        t1 = time.time()
+        logger.info(f"[differential] medgemma={t1-t0:.2f}s")
+        
+        data = extract_json(response)
+        
+        diagnoses = []
+        for dx in data.get("diagnoses", []):
+            diagnoses.append(Diagnosis(
+                name=dx.get("name", "Unknown"),
+                probability=dx.get("probability", "medium"),
+                supporting_evidence=dx.get("supporting_evidence", []),
+                against_evidence=dx.get("against_evidence", []),
+                suggested_tests=dx.get("suggested_tests", [])
+            ))
+        
+        t2 = time.time()
+        logger.info(f"[differential] total={t2-t0:.2f}s diagnoses={len(diagnoses)}")
+        return DifferentialResponse(diagnoses=diagnoses)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Differential generation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Differential generation error: {str(e)[:200]}")
 
 
 @app.post("/debate-turn", response_model=DebateTurnResponse)
@@ -644,6 +342,7 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
     clinical_state.differential = [d.model_dump() for d in request.current_differential]
     
     try:
+        t0 = time.time()
         # Run synchronous orchestrator call in a thread to avoid blocking the event loop
         result = await asyncio.to_thread(
             orchestrator.process_debate_turn,
@@ -651,6 +350,8 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
             clinical_state=clinical_state,
             previous_rounds=request.previous_rounds[-3:] if request.previous_rounds else None,
         )
+        t1 = time.time()
+        logger.info(f"[debate-turn] orchestrated total={t1-t0:.2f}s")
         
         # Parse updated differential with robust field name handling
         diagnoses = _parse_differential(result.get("updated_differential", []))
@@ -670,17 +371,22 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
 async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnResponse:
     """Fallback: MedGemma-only debate turn (original implementation)."""
     try:
+        t0 = time.time()
         model = get_model()
         formatted_labs = format_lab_values(request.lab_values)
         formatted_diff = format_differential([d.model_dump() for d in request.current_differential])
         formatted_rounds = format_rounds(request.previous_rounds)
+        
+        # Include image context if available
+        image_context = request.image_context or "No image evidence available"
         
         prompt = DEBATE_TURN_PROMPT.format(
             patient_history=request.patient_history,
             formatted_lab_values=formatted_labs,
             current_differential=formatted_diff,
             previous_rounds=formatted_rounds,
-            user_challenge=request.user_challenge
+            user_challenge=request.user_challenge,
+            image_context=image_context,
         )
         
         # Run blocking MedGemma inference in a thread
@@ -689,6 +395,9 @@ async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnRe
             max_new_tokens=2048,
             system_prompt=SYSTEM_PROMPT,
         )
+        t1 = time.time()
+        logger.info(f"[debate-turn] medgemma_only={t1-t0:.2f}s")
+        
         data = extract_json(response)
         
         # Parse updated differential with robust field name handling
@@ -763,6 +472,8 @@ async def analyze_image(file: UploadFile = FastAPIFile(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to read image: {e}")
     
+    t0 = time.time()
+    
     # Step 1: MedSigLIP triage (fast zero-shot classification)
     triage_summary = ""
     triage_result = {
@@ -778,9 +489,11 @@ async def analyze_image(file: UploadFile = FastAPIFile(...)):
             siglip = get_siglip()
             triage_result = siglip.analyze_findings(image)
             triage_summary = triage_result["triage_summary"]
+            t1 = time.time()
             logger.info(
-                f"MedSigLIP triage: {triage_result['image_type']} "
-                f"({triage_result['image_type_confidence']:.1%}), "
+                f"[analyze-image] medsiglip={t1-t0:.2f}s "
+                f"type={triage_result['image_type']} "
+                f"conf={triage_result['image_type_confidence']:.1%} "
                 f"modality={triage_result['modality']}"
             )
         except Exception as e:
@@ -833,6 +546,7 @@ Be specific and cite visible features in the image."""
         )
     
     try:
+        t_mg_start = time.time()
         medgemma_analysis = model.generate(
             medgemma_prompt,
             system_prompt=system_prompt,
@@ -840,7 +554,8 @@ Be specific and cite visible features in the image."""
             max_new_tokens=2048,
             temperature=0.1,
         )
-        logger.info(f"MedGemma analysis: {len(medgemma_analysis)} chars")
+        t_mg_end = time.time()
+        logger.info(f"[analyze-image] medgemma={t_mg_end-t_mg_start:.2f}s ({len(medgemma_analysis)} chars)")
     except Exception as e:
         logger.error(f"MedGemma image analysis failed: {e}")
         medgemma_analysis = f"Image analysis encountered an error: {str(e)}"
@@ -848,7 +563,7 @@ Be specific and cite visible features in the image."""
     # Check if MedGemma refused (pure disclaimers, no real analysis).
     # If so, retry once with a simpler prompt that bypasses safety guardrails.
     # We do NOT strip disclaimers from real analysis — they're appropriate for medical AI.
-    if _is_pure_refusal(medgemma_analysis):
+    if is_pure_refusal(medgemma_analysis):
         logger.info("MedGemma refused on first attempt, retrying with direct prompt...")
         retry_prompt = (
             "Describe the visual findings in this medical image. "
@@ -864,7 +579,7 @@ Be specific and cite visible features in the image."""
                 max_new_tokens=2048,
                 temperature=0.3,
             )
-            if not _is_pure_refusal(retry_analysis):
+            if not is_pure_refusal(retry_analysis):
                 logger.info(f"Retry succeeded: {len(retry_analysis)} chars")
                 medgemma_analysis = retry_analysis
             else:
@@ -875,9 +590,12 @@ Be specific and cite visible features in the image."""
     # Strip leading refusal preamble ("I am unable to... However, ...")
     # when real analysis follows.  Trailing disclaimers are kept.
     original_len = len(medgemma_analysis)
-    medgemma_analysis = _strip_refusal_preamble(medgemma_analysis)
+    medgemma_analysis = strip_refusal_preamble(medgemma_analysis)
     if len(medgemma_analysis) < original_len:
         logger.info(f"Stripped refusal preamble ({original_len} → {len(medgemma_analysis)} chars)")
+    
+    t_total = time.time()
+    logger.info(f"[analyze-image] total={t_total-t0:.2f}s")
     
     return ImageAnalysisResponse(
         image_type=triage_result.get("image_type", "medical image"),
@@ -897,43 +615,53 @@ async def generate_summary(request: SummaryRequest):
     """Generate final diagnosis summary."""
     logger.info("Generating final diagnosis summary")
     
-    model = get_model()
-    formatted_labs = format_lab_values(request.lab_values)
-    formatted_diff = format_differential([d.model_dump() for d in request.final_differential])
-    formatted_rounds = format_rounds(request.debate_rounds)
-    
-    prompt = SUMMARY_PROMPT.format(
-        patient_history=request.patient_history,
-        formatted_lab_values=formatted_labs,
-        final_differential=formatted_diff,
-        debate_rounds=formatted_rounds
-    )
-    
-    response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=3072)
-    data = extract_json(response)
-    
-    # Handle ruled_out which may be list of strings or list of dicts
-    ruled_out_raw = data.get("ruled_out", [])
-    ruled_out = []
-    for item in ruled_out_raw:
-        if isinstance(item, str):
-            ruled_out.append(item)
-        elif isinstance(item, dict):
-            # Extract diagnosis name from dict format
-            ruled_out.append(item.get("diagnosis", item.get("name", str(item))))
-        else:
-            ruled_out.append(str(item))
-    
-    return SummaryResponse(
-        final_diagnosis=data.get("final_diagnosis", "Unable to determine"),
-        confidence=data.get("confidence", "low"),
-        reasoning_chain=data.get("reasoning_chain", []),
-        ruled_out=ruled_out,
-        next_steps=data.get("next_steps", [])
-    )
+    try:
+        t0 = time.time()
+        model = get_model()
+        formatted_labs = format_lab_values(request.lab_values)
+        formatted_diff = format_differential([d.model_dump() for d in request.final_differential])
+        formatted_rounds = format_rounds(request.debate_rounds)
+        
+        prompt = SUMMARY_PROMPT.format(
+            patient_history=request.patient_history,
+            formatted_lab_values=formatted_labs,
+            final_differential=formatted_diff,
+            debate_rounds=formatted_rounds
+        )
+        
+        response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=3072)
+        t1 = time.time()
+        logger.info(f"[summary] medgemma={t1-t0:.2f}s")
+        
+        data = extract_json(response)
+        
+        # Handle ruled_out which may be list of strings or list of dicts
+        ruled_out_raw = data.get("ruled_out", [])
+        ruled_out = []
+        for item in ruled_out_raw:
+            if isinstance(item, str):
+                ruled_out.append(item)
+            elif isinstance(item, dict):
+                # Extract diagnosis name from dict format
+                ruled_out.append(item.get("diagnosis", item.get("name", str(item))))
+            else:
+                ruled_out.append(str(item))
+        
+        return SummaryResponse(
+            final_diagnosis=data.get("final_diagnosis", "Unable to determine"),
+            confidence=data.get("confidence", "low"),
+            confidence_percent=data.get("confidence_percent"),
+            reasoning_chain=data.get("reasoning_chain", []),
+            ruled_out=ruled_out,
+            next_steps=data.get("next_steps", [])
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Summary generation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Summary generation error: {str(e)[:200]}")
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

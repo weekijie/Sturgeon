@@ -9,6 +9,7 @@ import Prose from "../../components/Prose";
 interface SummaryData {
   final_diagnosis: string;
   confidence: string;
+  confidence_percent?: number;
   reasoning_chain: string[];
   ruled_out: string[];
   next_steps: string[];
@@ -78,6 +79,11 @@ export default function SummaryPage() {
     router.push("/");
   };
 
+  // 1C: PDF export via browser print
+  const handleExportPDF = () => {
+    window.print();
+  };
+
   // Confidence to percentage mapping
   const confidenceToPercent = (conf: string): number => {
     const map: Record<string, number> = { high: 90, medium: 70, low: 50 };
@@ -121,10 +127,10 @@ export default function SummaryPage() {
     );
   }
 
-  const confidence = confidenceToPercent(summary.confidence);
+  const confidence = summary.confidence_percent ?? confidenceToPercent(summary.confidence);
 
   return (
-    <main className="min-h-screen flex flex-col items-center p-6 pb-20 bg-white pt-8">
+    <main className="min-h-screen flex flex-col items-center p-6 pb-20 bg-white pt-8 print-target">
       <div className="w-full max-w-3xl space-y-8">
 
         {/* Header */}
@@ -135,13 +141,22 @@ export default function SummaryPage() {
             </h1>
             <p className="text-muted mt-1 font-medium">Diagnostic Consensus Reached</p>
           </div>
-          <Button 
-            variant="bordered" 
-            onPress={handleNewCase} 
-            className="border-border text-foreground hover:border-teal hover:text-teal hover:bg-teal-light/30 transition-colors"
-          >
-            New Case
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="bordered" 
+              onPress={handleExportPDF}
+              className="border-border text-foreground hover:border-teal hover:text-teal hover:bg-teal-light/30 transition-colors no-print"
+            >
+              Export PDF
+            </Button>
+            <Button 
+              variant="bordered" 
+              onPress={handleNewCase} 
+              className="border-border text-foreground hover:border-teal hover:text-teal hover:bg-teal-light/30 transition-colors no-print"
+            >
+              New Case
+            </Button>
+          </div>
         </header>
 
         {/* Final Diagnosis Card */}
@@ -181,7 +196,7 @@ export default function SummaryPage() {
                 <ol className="space-y-2">
                   {summary.reasoning_chain.map((step, i) => (
                     <li key={i} className="flex gap-3 text-sm leading-relaxed">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-teal-light text-teal text-xs font-bold flex items-center justify-center mt-0.5">
+                      <span className="shrink-0 w-6 h-6 rounded-full bg-teal-light text-teal text-xs font-bold flex items-center justify-center mt-0.5">
                         {i + 1}
                       </span>
                       <span className="text-muted">{step.replace(/^\d+[\.\)]\s*/, "")}</span>
@@ -209,7 +224,7 @@ export default function SummaryPage() {
                 return (
                   <Card key={idx} className="p-4 bg-white border border-border shadow-sm">
                     <div className="flex items-start gap-3">
-                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-red-100 text-danger text-xs font-bold flex items-center justify-center mt-0.5">
+                      <span className="shrink-0 w-5 h-5 rounded-full bg-red-100 text-danger text-xs font-bold flex items-center justify-center mt-0.5">
                         &times;
                       </span>
                       <div>
