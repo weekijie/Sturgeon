@@ -355,18 +355,18 @@ export default function UploadPage() {
                   )}
 
                   {/* File chips */}
-                  <div className="flex flex-col items-center gap-2">
+                  <div className="flex flex-col items-center gap-2 w-full px-2">
                     {/* Image file chip */}
                     {imageFile && (
-                      <div className="flex items-center gap-2">
-                        <div className="text-success text-lg">&#10003;</div>
-                        <p className="font-medium text-foreground text-sm">
+                      <div className="flex items-center gap-2 w-full max-w-full overflow-hidden">
+                        <div className="text-success text-lg shrink-0">&#10003;</div>
+                        <p className="font-medium text-foreground text-sm truncate min-w-0 flex-1" title={imageFile.name}>
                           {imageFile.name}
                         </p>
-                        <Chip size="sm" variant="flat">
+                        <Chip size="sm" variant="flat" className="shrink-0">
                           {(imageFile.size / 1024).toFixed(1)} KB
                         </Chip>
-                        <Chip size="sm" variant="flat" color="secondary">
+                        <Chip size="sm" variant="flat" color="secondary" className="shrink-0 hidden sm:inline-flex">
                           Medical Image
                         </Chip>
                         <button
@@ -374,25 +374,25 @@ export default function UploadPage() {
                             e.stopPropagation();
                             clearImage();
                           }}
-                          className="relative z-20 text-xs text-muted hover:text-danger transition-colors ml-1"
+                          className="relative z-20 text-xs text-muted hover:text-danger transition-colors ml-1 shrink-0"
                           title="Remove image"
                         >
-                          ✕
+                          &#10005;
                         </button>
                       </div>
                     )}
 
                     {/* Lab file chip */}
                     {labFile && (
-                      <div className="flex items-center gap-2">
-                        <div className="text-success text-lg">&#10003;</div>
-                        <p className="font-medium text-foreground text-sm">
+                      <div className="flex items-center gap-2 w-full max-w-full overflow-hidden">
+                        <div className="text-success text-lg shrink-0">&#10003;</div>
+                        <p className="font-medium text-foreground text-sm truncate min-w-0 flex-1" title={labFile.name}>
                           {labFile.name}
                         </p>
-                        <Chip size="sm" variant="flat">
+                        <Chip size="sm" variant="flat" className="shrink-0">
                           {(labFile.size / 1024).toFixed(1)} KB
                         </Chip>
-                        <Chip size="sm" variant="flat" color="primary">
+                        <Chip size="sm" variant="flat" color="primary" className="shrink-0 hidden sm:inline-flex">
                           Lab Report
                         </Chip>
                         <button
@@ -400,7 +400,35 @@ export default function UploadPage() {
                             e.stopPropagation();
                             clearLab();
                           }}
-                          className="relative z-20 text-xs text-muted hover:text-danger transition-colors ml-1"
+                          className="relative z-20 text-xs text-muted hover:text-danger transition-colors ml-1 shrink-0"
+                          title="Remove lab report"
+                        >
+                          &#10005;
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                    )}
+
+                    {/* Lab file chip */}
+                    {labFile && (
+                      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                        <div className="text-success text-lg shrink-0">&#10003;</div>
+                        <p className="font-medium text-foreground text-sm truncate max-w-[120px] sm:max-w-[200px]" title={labFile.name}>
+                          {labFile.name}
+                        </p>
+                        <Chip size="sm" variant="flat" className="shrink-0">
+                          {(labFile.size / 1024).toFixed(1)} KB
+                        </Chip>
+                        <Chip size="sm" variant="flat" color="primary" className="shrink-0">
+                          Lab Report
+                        </Chip>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearLab();
+                          }}
+                          className="relative z-20 text-xs text-muted hover:text-danger transition-colors ml-1 shrink-0"
                           title="Remove lab report"
                         >
                           ✕

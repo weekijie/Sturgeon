@@ -238,6 +238,9 @@ Before suggesting or implementing any new external tool, library, or API:
 - [x] **Export case as PDF** — print-optimized `@media print` CSS on summary page
 - [x] **Mobile responsive layout** — collapsible sidebar on debate page
 - [x] **Visual probability bars** — sidebar diagnosis cards show probability as colored bars
+- [x] **Comprehensive citation detection** — 15+ medical organizations (NCCN, AAD, ACR, ADA, AHA, ACC, CHEST, USPSTF, WHO, NICE, ASCO, ESMO) with smart deduplication
+- [x] **Citation test suite** — 26 passing tests for all guideline sources
+- [x] **Mobile UI polish** — Fixed text overflow in upload page, sidebar header spacing, touch-friendly interactions
 
 ### Next Steps (Priority Order)
 

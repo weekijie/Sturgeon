@@ -356,14 +356,19 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
         # Parse updated differential with robust field name handling
         diagnoses = _parse_differential(result.get("updated_differential", []))
         
+        # Debug logging for RAG
+        citations = result.get("citations", [])
+        has_guidelines = result.get("has_guidelines", False)
+        logger.info(f"[RAG orchestrated] Response has {len(citations)} citations, has_guidelines={has_guidelines}")
+        
         return DebateTurnResponse(
             ai_response=result.get("ai_response", "I need more information to respond."),
             updated_differential=diagnoses if diagnoses else request.current_differential,
             suggested_test=result.get("suggested_test"),
             session_id=session_id,
             orchestrated=True,
-            citations=result.get("citations", []),
-            has_guidelines=result.get("has_guidelines", False),
+            citations=citations,
+            has_guidelines=has_guidelines,
         )
     except Exception as e:
         logger.error(f"Orchestrator error: {e}. Falling back to MedGemma-only.")
@@ -409,6 +414,11 @@ async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnRe
         ai_response_text = data.get("ai_response", "")
         from gemini_orchestrator import extract_citations
         _, citations = extract_citations(ai_response_text)
+        
+        logger.info(f"[RAG fallback] Extracted {len(citations)} citations")
+        if citations:
+            for c in citations:
+                logger.info(f"[RAG fallback] Citation: {c['text']}")
         
         return DebateTurnResponse(
             ai_response=ai_response_text,

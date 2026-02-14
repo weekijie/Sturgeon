@@ -29,13 +29,37 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Mapping of guideline citations to their URLs
+# These are generic landing pages - Phase B will use specific URLs from retrieved chunks
 GUIDELINE_URLS: Dict[str, str] = {
-    "IDSA Guidelines for Community-Acquired Pneumonia": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia/",
-    "IDSA": "https://www.idsociety.org/",
-    "CDC Legionella": "https://www.cdc.gov/legionella/clinicians.html",
-    "CDC": "https://www.cdc.gov/",
-    "ATS/IDSA": "https://www.thoracic.org/",
-    "ATS": "https://www.thoracic.org/",
+    # Infectious Disease
+    "IDSA": "https://www.idsociety.org/practice-guideline/",
+    "CDC": "https://www.cdc.gov/professionals/",
+    "ATS": "https://www.thoracic.org/practice-guidelines/",
+    "ATS/IDSA": "https://www.thoracic.org/practice-guidelines/",
+    # Cancer / Oncology
+    "NCCN": "https://www.nccn.org/guidelines/",
+    "ASCO": "https://www.asco.org/practice-patients/guidelines",
+    "ESMO": "https://www.esmo.org/guidelines",
+    # Dermatology
+    "AAD": "https://www.aad.org/clinical-guidelines",
+    "AADA": "https://www.aad.org/clinical-guidelines",
+    # Radiology
+    "ACR": "https://www.acr.org/Clinical-Resources/ACR-Appropriateness-Criteria",
+    # Diabetes
+    "ADA": "https://professional.diabetes.org/guidelines-recommendations",
+    "ADAD": "https://professional.diabetes.org/guidelines-recommendations",
+    # Cardiology
+    "AHA": "https://professional.heart.org/guidelines-and-statements",
+    "ACC": "https://www.acc.org/guidelines",
+    "ACC/AHA": "https://professional.heart.org/guidelines-and-statements",
+    # Pulmonary
+    "CHEST": "https://www.chestnet.org/guidelines-and-research",
+    # Preventive Care
+    "USPSTF": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation-topics",
+    # Global Health
+    "WHO": "https://www.who.int/publications/guidelines",
+    # UK Guidelines
+    "NICE": "https://www.nice.org.uk/guidance",
 }
 
 
@@ -47,42 +71,137 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
     - (IDSA Guidelines for Community-Acquired Pneumonia, 2023)
     - (CDC Legionella Guidelines, 2024)
     - (ATS/IDSA Guidelines for Severe CAP, 2022)
+    - According to IDSA guidelines...
+    - Per CDC recommendations...
     
     Returns:
         - Cleaned text (citations remain inline)
         - List of citation dicts with text, url, and source
     """
     citations = []
+    seen_spans = set()  # Track (start, end) positions to avoid duplicates
     
-    # Pattern to match guideline citations in parentheses
-    # Matches: (Source Guidelines for ..., YYYY) or (Source ..., YYYY)
-    citation_pattern = r'\((IDSA|CDC|ATS|ATS/IDSA)[^)]*(?:Guidelines|Guideline)[^)]*\d{4}\)'
+    # All medical organizations to detect - longer/specific ones first to avoid partial matches
+    ORGS = r'USPSTF|CHEST|NCCN|ASCO|ESMO|AAD|ACR|ADA|AHA|ACC|IDSA|CDC|ATS|WHO|NICE'
+    COMBO_ORGS = r'ATS/IDSA|ACC/AHA'
     
-    matches = re.finditer(citation_pattern, text, re.IGNORECASE)
+    # Pattern 1: Full citations in parentheses with year
+    # Matches: (IDSA Guidelines for Community-Acquired Pneumonia, 2023)
+    #          (ATS/IDSA Consensus Guidelines, 2021)
+    #          (NCCN Melanoma Guidelines, 2024)
+    #          (CDC Legionella Guidelines, 2024)
+    #          (ADA Standards of Care, 2024)
+    #          (ACR Appropriateness Criteria, 2022)
+    citation_pattern1 = rf'\((?:the\s+)?({COMBO_ORGS}|{ORGS})\b[^)]{{0,150}}?(?:Guidelines?|Consensus\s+Guidelines|Standards?|Appropriateness\s+Criteria|recommendations?|guidance|Criteria|Statements?)\b[^)]{{0,100}}?\d{{4}}[^)]{{0,10}}?\)'
     
-    for match in matches:
-        citation_text = match.group(0)
-        
+    # Pattern 2: Attribution phrases with year
+    # Matches: "According to IDSA guidelines from 2023"
+    #          "Per NCCN recommendations (2024)"
+    #          "Based on WHO guidelines 2023"
+    #          "Per ACR Appropriateness Criteria guidelines from 2022"
+    attribution_pattern = rf'(?:According to|Per|Based on|Following)\s+(?:the\s+)?({COMBO_ORGS}|{ORGS})\b[^,.]{{0,100}}?(?:Guidelines?|Standards?|recommendations?|guidance|criteria)[^,.]{{0,60}}?\d{{4}}'
+    
+    # Pattern 3: Simple (Org Year) format
+    # Matches: (NCCN 2024) or (IDSA, 2023)
+    simple_pattern = rf'\(({COMBO_ORGS}|{ORGS})[/,\s]+\d{{4}}\)'
+    
+    # Find all matches with their positions
+    all_matches = []
+    
+    for pattern in [citation_pattern1, attribution_pattern, simple_pattern]:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            # Skip if this span overlaps with an already-found citation
+            span = (match.start(), match.end())
+            overlap = False
+            for existing_span in seen_spans:
+                if not (span[1] <= existing_span[0] or span[0] >= existing_span[1]):
+                    overlap = True
+                    break
+            
+            if not overlap:
+                all_matches.append((span, match.group(0)))
+                seen_spans.add(span)
+    
+    # Process unique matches
+    for span, citation_text in all_matches:
         # Determine source and URL
+        citation_upper = citation_text.upper()
         source = "Unknown"
         url = ""
         
-        if "IDSA" in citation_text:
-            source = "IDSA"
-            url = GUIDELINE_URLS.get("IDSA Guidelines for Community-Acquired Pneumonia", 
-                                    GUIDELINE_URLS["IDSA"])
-        elif "CDC" in citation_text:
-            source = "CDC"
-            url = GUIDELINE_URLS.get("CDC Legionella", GUIDELINE_URLS["CDC"])
-        elif "ATS/IDSA" in citation_text:
+        # Check for combined organizations first (ATS/IDSA, ACC/AHA)
+        if "ATS/IDSA" in citation_upper or ("ATS" in citation_upper and "IDSA" in citation_upper):
             source = "ATS/IDSA"
-            url = GUIDELINE_URLS["ATS/IDSA"]
-        elif "ATS" in citation_text:
+            url = GUIDELINE_URLS.get("ATS/IDSA", GUIDELINE_URLS.get("ATS", ""))
+        elif "ACC/AHA" in citation_upper or ("ACC" in citation_upper and "AHA" in citation_upper):
+            source = "ACC/AHA"
+            url = GUIDELINE_URLS.get("ACC/AHA", GUIDELINE_URLS.get("AHA", ""))
+        elif "ADA" in citation_upper and "AAD" in citation_upper:
+            # Disambiguate: AAD (dermatology) vs ADA (diabetes)
+            context_window = text[max(0, span[0] - 200):min(len(text), span[1] + 200)].upper()
+            if any(word in context_window for word in ["DERMATOLOGY", "SKIN", "MELANOMA", "PSORIASIS", "ECZEMA"]):
+                source = "AAD"
+                url = GUIDELINE_URLS.get("AAD", "")
+            else:
+                source = "ADA"
+                url = GUIDELINE_URLS.get("ADA", "")
+        # Single organizations - check in order of specificity (longer acronyms first)
+        elif "USPSTF" in citation_upper:
+            source = "USPSTF"
+            url = GUIDELINE_URLS.get("USPSTF", "")
+        elif "NCCN" in citation_upper:
+            source = "NCCN"
+            url = GUIDELINE_URLS.get("NCCN", "")
+        elif "ASCO" in citation_upper:
+            source = "ASCO"
+            url = GUIDELINE_URLS.get("ASCO", "")
+        elif "ESMO" in citation_upper:
+            source = "ESMO"
+            url = GUIDELINE_URLS.get("ESMO", "")
+        elif "AAD" in citation_upper:
+            source = "AAD"
+            url = GUIDELINE_URLS.get("AAD", "")
+        elif "ACR" in citation_upper:
+            source = "ACR"
+            url = GUIDELINE_URLS.get("ACR", "")
+        elif "ADA" in citation_upper:
+            source = "ADA"
+            url = GUIDELINE_URLS.get("ADA", "")
+        elif "AHA" in citation_upper:
+            source = "AHA"
+            url = GUIDELINE_URLS.get("AHA", "")
+        elif "ACC" in citation_upper:
+            source = "ACC"
+            url = GUIDELINE_URLS.get("ACC", "")
+        elif "CHEST" in citation_upper:
+            source = "CHEST"
+            url = GUIDELINE_URLS.get("CHEST", "")
+        elif "USPSTF" in citation_upper:
+            source = "USPSTF"
+            url = GUIDELINE_URLS.get("USPSTF", "")
+        elif "WHO" in citation_upper:
+            source = "WHO"
+            url = GUIDELINE_URLS.get("WHO", "")
+        elif "NICE" in citation_upper:
+            source = "NICE"
+            url = GUIDELINE_URLS.get("NICE", "")
+        elif "IDSA" in citation_upper:
+            source = "IDSA"
+            url = GUIDELINE_URLS.get("IDSA", "")
+        elif "CDC" in citation_upper:
+            source = "CDC"
+            url = GUIDELINE_URLS.get("CDC", "")
+        elif "ATS" in citation_upper:
             source = "ATS"
-            url = GUIDELINE_URLS["ATS"]
+            url = GUIDELINE_URLS.get("ATS", "")
+        
+        # Format citation text consistently
+        formatted_text = citation_text
+        if not citation_text.startswith("("):
+            formatted_text = f"({citation_text})"
         
         citations.append({
-            "text": citation_text,
+            "text": formatted_text,
             "url": url,
             "source": source
         })
@@ -342,6 +461,14 @@ Provide a focused, evidence-based analysis. Be specific about which findings sup
         result["citations"] = citations
         result["has_guidelines"] = len(citations) > 0
         
+        # Debug logging
+        logger.info(f"[RAG] Extracted {len(citations)} citations from response")
+        if citations:
+            for c in citations:
+                logger.info(f"[RAG] Citation: {c['text']} -> {c['url']}")
+        else:
+            logger.info(f"[RAG] No citations found. AI response snippet: {ai_response_text[:200]}...")
+        
         # Update clinical state with new findings
         if result.get("key_findings_update"):
             clinical_state.key_findings.extend(result["key_findings_update"])
@@ -422,10 +549,20 @@ MedGemma's analysis:
 Now synthesize this into your response. You must:
 1. Address the user's challenge directly and conversationally
 2. Incorporate MedGemma's analysis with specific evidence citations
-3. Update the differential if warranted by the analysis
-4. Suggest a test if it would help clarify
+3. Cite relevant clinical guidelines when making recommendations using this EXACT format:
+   - Cancer: "(NCCN Guidelines for Melanoma, 2024)" or "(ASCO Melanoma Guidelines, 2023)"
+   - Dermatology: "(AAD Guidelines for Management of Primary Cutaneous Melanoma, 2019)"
+   - Infectious Disease: "(IDSA Guidelines for Community-Acquired Pneumonia, 2023)" or "(CDC Legionella Guidelines, 2024)"
+   - Radiology: "(ACR Appropriateness Criteria for Soft Tissue Masses, 2022)"
+   - Cardiology: "(ACC/AHA Guidelines for Heart Failure, 2022)"
+   - Diabetes: "(ADA Standards of Care in Diabetes, 2024)"
+   - Pulmonary: "(CHEST Guidelines for Venous Thromboembolism, 2021)"
+   - Preventive Care: "(USPSTF Recommendation for Skin Cancer Screening, 2023)"
+   - Global Health: "(WHO Guidelines for Cancer Pain Relief, 2023)"
+4. Update the differential if warranted by the analysis
+5. Suggest a test if it would help clarify
 
-CRITICAL: The "ai_response" field must be a plain conversational text string, NOT a JSON object or nested JSON. Write it as you would speak to a colleague."""
+CRITICAL: The "ai_response" field must be a plain conversational text string, NOT a JSON object or nested JSON. Write it as you would speak to a colleague. Include guideline citations naturally within your text."""
     
     def _parse_orchestrator_response(self, text: str) -> dict:
         """Parse Gemini's JSON response with fallback handling.

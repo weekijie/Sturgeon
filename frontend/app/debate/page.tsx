@@ -307,10 +307,9 @@ export default function DebatePage() {
 
         {/* Left Panel - Differential Diagnoses */}
         <aside className={`
-          w-80 border-r border-border bg-surface p-4 overflow-y-auto 
-          h-[calc(100vh-52px-3px)] sticky top-[calc(52px+3px)]
-          ${/* 1F: Mobile responsiveness */""}
-          fixed md:static z-40 md:z-auto
+          w-[85vw] max-w-[320px] md:w-80 border-r border-border bg-surface p-4 pt-6 md:pt-4 overflow-y-auto 
+          h-[calc(100vh-52px-3px)] md:sticky md:top-[calc(52px+3px)]
+          fixed md:static z-40 md:z-auto top-[55px] left-0
           transition-transform duration-200 ease-in-out
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         `}>
@@ -448,15 +447,15 @@ export default function DebatePage() {
         </aside>
 
         {/* Right Panel - Chat */}
-        <section className="flex-1 flex flex-col min-w-0">
+        <section className="flex-1 flex flex-col min-w-0 h-[calc(100vh-52px-3px)]">
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-4 min-h-0">
             {messages.map((msg, idx) => (
               <div
                 key={idx}
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div className="max-w-[85%] md:max-w-[70%]">
+                <div className="max-w-[92%] sm:max-w-[85%] md:max-w-[70%] min-w-0">
                   {/* Label */}
                   <p className={`text-[10px] font-medium uppercase tracking-wider mb-1 ${
                     msg.role === "user" ? "text-right text-muted" : msg.role === "error" ? "text-danger" : "text-teal"
@@ -545,12 +544,12 @@ export default function DebatePage() {
 
             {/* 1B: Suggested challenge prompts */}
             {!isLoading && messages.length > 0 && (
-              <div className="max-w-4xl mx-auto mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              <div className="max-w-4xl mx-auto mb-3 flex gap-2 overflow-x-auto pb-2 px-1 -mx-1 scrollbar-hide snap-x snap-mandatory">
                 {SUGGESTED_PROMPTS.map((prompt, i) => (
                   <button
                     key={i}
                     onClick={() => handleSuggestedPrompt(prompt)}
-                    className="shrink-0 text-xs px-3 py-1.5 rounded-full border border-teal/30 text-teal hover:bg-teal hover:text-white transition-colors whitespace-nowrap"
+                    className="shrink-0 text-xs px-3 py-1.5 rounded-full border border-teal/30 text-teal hover:bg-teal hover:text-white transition-colors whitespace-nowrap snap-start"
                   >
                     {prompt}
                   </button>
@@ -558,9 +557,9 @@ export default function DebatePage() {
               </div>
             )}
 
-            <div className="flex gap-3 max-w-4xl mx-auto">
+            <div className="flex gap-2 sm:gap-3 max-w-4xl mx-auto">
               <Input
-                className="flex-1"
+                className="flex-1 min-w-0"
                 placeholder="Challenge the diagnosis..."
                 value={input}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
@@ -571,9 +570,10 @@ export default function DebatePage() {
                 variant="solid" 
                 onPress={handleSend} 
                 isDisabled={isLoading || !input.trim()}
-                className="bg-teal text-white hover:bg-teal/90 font-semibold px-4 md:px-6 rounded-lg"
+                className="bg-teal text-white hover:bg-teal/90 font-semibold px-3 sm:px-4 md:px-6 rounded-lg shrink-0"
               >
-                Send &rarr;
+                <span className="hidden sm:inline">Send</span>
+                <span className="sm:hidden">→</span>
               </Button>
             </div>
           </div>

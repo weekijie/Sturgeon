@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-02-15] Session 13 — Comprehensive Citation Detection & Mobile Responsiveness
+
+### Backend
+
+#### Added
+- **Expanded Citation Detection** (`ai-service/gemini_orchestrator.py`):
+  - Support for 15+ medical organizations: NCCN, AAD, ACR, ADA, AHA, ACC, CHEST, USPSTF, WHO, NICE, ASCO, ESMO (plus existing IDSA, CDC, ATS)
+  - Combined organization support: ATS/IDSA, ACC/AHA
+  - Smart URL mapping with generic landing pages (ready for Phase B specific URLs)
+  - Position-based deduplication prevents duplicate citations
+  - Enhanced regex patterns with better boundary detection
+- **Comprehensive Test Suite** (`ai-service/tests/test_citations.py`):
+  - 26 unit tests covering all supported organizations
+  - Tests for combined orgs, duplicates, edge cases
+  - All tests passing ✅
+
+#### Changed
+- **Citation Prompt Enhancement**: Updated synthesis prompt with examples for all specialty areas (cancer, dermatology, cardiology, diabetes, etc.)
+
+### Frontend
+
+#### Mobile Responsiveness
+- **Upload Page** (`frontend/app/page.tsx`):
+  - Fixed filename text overflow in green drop zone
+  - Truncates long filenames with ellipsis (`truncate` + `min-w-0 flex-1`)
+  - Hidden "Medical Image"/"Lab Report" labels on mobile to save space
+  - Proper container width constraints (`w-full max-w-full overflow-hidden`)
+
+- **Debate Page** (`frontend/app/debate/page.tsx`):
+  - Fixed sidebar header cutoff with extra mobile padding (`pt-6 md:pt-4`)
+  - Mobile-optimized sidebar width (`w-[85vw] max-w-[320px]`)
+  - Chat container with proper overflow handling (`h-[calc(100vh-52px-3px)]`)
+  - Responsive input area with adaptive button text
+  - Touch-friendly suggested prompts with snap scrolling
+
+- **Global CSS** (`frontend/app/globals.css`):
+  - Touch target minimums (44px) for mobile
+  - Smooth scrolling with `-webkit-overflow-scrolling: touch`
+  - Scroll snap for suggested prompt chips
+  - Custom scrollbar styling
+  - Focus-visible states for accessibility
+
+---
+
 ## [2026-02-14] Session 12 — Backend Modularization & UI Polish
 
 ### Architecture

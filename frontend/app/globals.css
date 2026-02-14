@@ -307,3 +307,86 @@
     box-shadow: none !important;
   }
 }
+
+/* Mobile-friendly touch interactions */
+@media (hover: none) and (pointer: coarse) {
+  /* Larger touch targets on mobile */
+  button, 
+  [role="button"],
+  a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Better touch feedback */
+  button:active,
+  [role="button"]:active {
+    opacity: 0.7;
+  }
+  
+  /* Smooth scrolling for touch devices */
+  .overflow-y-auto,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Mobile-specific responsive improvements */
+@media (max-width: 640px) {
+  /* Smaller padding on mobile */
+  .p-3 {
+    padding: 0.625rem;
+  }
+  
+  /* Ensure text doesn't overflow */
+  .wrap-break-word {
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+  
+  /* Sidebar overlay improvements */
+  aside {
+    overscroll-behavior: contain;
+  }
+}
+
+/* Scroll snap for suggested prompts */
+.snap-x {
+  scroll-snap-type: x mandatory;
+}
+
+.snap-start {
+  scroll-snap-align: start;
+}
+
+/* Custom scrollbar for better visibility */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* Focus visible for accessibility */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+/* Prevent text selection on buttons */
+button {
+  user-select: none;
+}
