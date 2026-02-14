@@ -98,15 +98,25 @@ Sturgeon/
 │   ├── app/
 │   │   ├── page.tsx           # Upload + history
 │   │   ├── debate/page.tsx    # Debate chat
+│   │   ├── summary/page.tsx   # Final diagnosis
+│   │   ├── context/           # React Context
 │   │   └── api/               # Routes → Python
 │   └── components/
 │
-├── ai-service/                 # Python FastAPI
-│   ├── main.py                # Endpoints
+├── ai-service/                 # Python FastAPI (modular)
+│   ├── main.py                # App setup + endpoints
+│   ├── models.py              # Pydantic request/response models
+│   ├── json_utils.py          # JSON extraction & repair utilities
+│   ├── refusal.py             # Refusal detection & preamble stripping
+│   ├── formatters.py          # Lab/differential/round formatters
 │   ├── medgemma.py            # Model inference
-│   └── prompts.py             # Prompt templates
+│   ├── prompts.py             # Prompt templates
+│   ├── gemini_orchestrator.py # Conversation orchestrator
+│   ├── medsiglip.py           # Image triage
+│   └── tests/                 # Unit tests (41 passing)
 │
 ├── CLAUDE.md                   # This file
+├── CHANGELOG.md               # Session-by-session changes
 └── README.md
 ```
 
@@ -132,6 +142,56 @@ Sturgeon/
 | MedGemma API     | Use `AutoModelForImageTextToText` + `AutoProcessor`          |
 | AMD GPU          | Set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`              |
 | Gemini API       | Paid key available. Free tier also works for reproducibility |
+
+---
+
+## Competition Rules & Licensing
+
+### Winner Obligations (Section 5)
+
+**CRITICAL**: If you win the MedGemma Impact Challenge, you must:
+- Grant **CC BY 4.0 license** to your submission to the Competition Sponsor
+- Provide detailed methodology description (architecture, preprocessing, hyperparameters, training details)
+- Include complete code repository with reproduction instructions
+- Ensure results are reproducible by judges
+
+**Current License**: CC BY 4.0 (see LICENSE file)
+- Changed from MIT to comply with competition winner requirements
+- More permissive: allows commercial use with attribution
+- Ensures medical AI research remains open and accessible
+
+### External Tools & Data (Section 6)
+
+**✅ ALLOWED - Meet Reasonableness Standard**:
+| Tool/Service | Cost | Accessibility | License |
+|-------------|------|---------------|---------|
+| **MedGemma** | Free | HuggingFace gated model | HAI-DEF Terms |
+| **Gemini API** | Free tier + paid | All participants | Google AI Terms |
+| **PyTorch** | Free | Open source | BSD-3 |
+| **Transformers** | Free | Open source | Apache 2.0 |
+| **FastAPI** | Free | Open source | MIT |
+| **Next.js** | Free | Open source | MIT |
+| **HeroUI** | Free | Open source | MIT |
+| **pdfplumber** | Free | Open source | MIT |
+| **pytest** | Free | Open source | MIT |
+
+**❌ NOT ALLOWED**:
+- Proprietary datasets exceeding prize value
+- Commercial software requiring expensive licenses
+- Tools with geo-restrictions or limited accessibility
+- APIs with per-call costs that exclude participants
+
+### Compliance Checklist for New Features
+
+Before suggesting or implementing any new external tool, library, or API:
+
+- [ ] **Free/Open Source?** Must be MIT, Apache, BSD, or CC BY compatible
+- [ ] **Accessible to all?** No paywalls, geo-restrictions, or limited access
+- [ ] **Reproducible?** Judges must be able to replicate results without special access
+- [ ] **Documented?** Clear setup instructions in README
+- [ ] **Compatible with CC BY 4.0?** Can be included in open source release
+
+**When in doubt**: Use only tools already listed in requirements.txt or package.json
 
 ---
 
@@ -165,6 +225,19 @@ Sturgeon/
 - [x] Multi-file upload — simultaneous image + lab report upload, parallel `Promise.all` processing, individual remove buttons
 - [x] Refusal preamble stripping — `_strip_refusal_preamble()` strips "I am unable to... However..." prefix when real analysis follows
 - [x] Summary token limit bumped (2048 → 3072) to prevent truncated JSON
+- [x] **Backend modularization** — split `main.py` (940 lines) into focused modules: `models.py`, `json_utils.py`, `refusal.py`, `formatters.py`
+- [x] **Backend unit tests** — 41/41 passing (JSON parsing, refusal detection, formatters)
+- [x] **Comprehensive error handling** — try/except on all endpoints with performance timing logs
+- [x] **Pydantic request validation** — prevents empty inputs on all endpoints
+- [x] **Few-shot prompt examples** — added to `extract-labs` and `differential` prompts for JSON stability
+- [x] **Chain-of-Thought reasoning** — "think step-by-step" instruction for differential diagnosis
+- [x] **Confidence percentage scale** — numeric 0-100 instead of high/medium/low
+- [x] **Image context in debate fallback** — MedGemma-only path includes `image_context` from uploads
+- [x] **Upload page input validation** — error banner when no evidence provided
+- [x] **Suggested challenge prompts** — chip buttons in debate UI ("What if...", "Could this be...")
+- [x] **Export case as PDF** — print-optimized `@media print` CSS on summary page
+- [x] **Mobile responsive layout** — collapsible sidebar on debate page
+- [x] **Visual probability bars** — sidebar diagnosis cards show probability as colored bars
 
 ### Next Steps (Priority Order)
 
@@ -191,6 +264,8 @@ See `CHANGELOG.md` for all code changes.
 **Feb 12, 2026**: MedSigLIP triage accuracy improvement. Label engineering (8 zero-shot labels), confidence threshold fallback (modality="uncertain"), adaptive MedGemma prompt, image analysis temp=0.1.
 **Feb 13, 2026**: Refactored `strip_disclaimers` → `_is_pure_refusal` (boolean refusal detector, no text modification). Fixed JSON newline repair with string-aware `_fix_newlines_in_json_strings()`. Added auto-retry for image analysis refusals. All 4 demo cases verified E2E.
 **Feb 13, 2026**: Multi-file upload — `page.tsx` rewritten from single `file` state to `imageFile` + `labFile` slots. `processFiles()` classifies by type, `Promise.all` runs image analysis + lab extraction in parallel. Drop zone shows both files with individual ✕ remove buttons. Added `_strip_refusal_preamble()` to strip "I am unable to... However..." prefix. Summary `max_new_tokens` bumped 2048→3072.
+
+**Feb 14, 2026**: Backend modularization + UI polish + test suite. Split monolithic `main.py` into focused modules (`models.py`, `json_utils.py`, `refusal.py`, `formatters.py`). Added comprehensive unit test suite (41 tests covering JSON parsing, refusal detection, formatters). Enhanced prompts with few-shot examples and Chain-of-Thought reasoning. Added input validation, suggested challenge chips, PDF export, mobile-responsive collapsible sidebar, and visual probability bars.
 
 ---
 

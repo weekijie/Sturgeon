@@ -14,13 +14,88 @@ intelligent agents or callable tools."
 import os
 import json
 import logging
+import re
 from dataclasses import dataclass, field, asdict
-from typing import Optional
+from typing import Optional, List, Dict, Tuple
 
 from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# RAG: Citation Parser
+# ---------------------------------------------------------------------------
+
+# Mapping of guideline citations to their URLs
+GUIDELINE_URLS: Dict[str, str] = {
+    "IDSA Guidelines for Community-Acquired Pneumonia": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia/",
+    "IDSA": "https://www.idsociety.org/",
+    "CDC Legionella": "https://www.cdc.gov/legionella/clinicians.html",
+    "CDC": "https://www.cdc.gov/",
+    "ATS/IDSA": "https://www.thoracic.org/",
+    "ATS": "https://www.thoracic.org/",
+}
+
+
+def extract_citations(text: str) -> Tuple[str, List[Dict]]:
+    """
+    Extract clinical guideline citations from AI response text.
+    
+    Looks for patterns like:
+    - (IDSA Guidelines for Community-Acquired Pneumonia, 2023)
+    - (CDC Legionella Guidelines, 2024)
+    - (ATS/IDSA Guidelines for Severe CAP, 2022)
+    
+    Returns:
+        - Cleaned text (citations remain inline)
+        - List of citation dicts with text, url, and source
+    """
+    citations = []
+    
+    # Pattern to match guideline citations in parentheses
+    # Matches: (Source Guidelines for ..., YYYY) or (Source ..., YYYY)
+    citation_pattern = r'\((IDSA|CDC|ATS|ATS/IDSA)[^)]*(?:Guidelines|Guideline)[^)]*\d{4}\)'
+    
+    matches = re.finditer(citation_pattern, text, re.IGNORECASE)
+    
+    for match in matches:
+        citation_text = match.group(0)
+        
+        # Determine source and URL
+        source = "Unknown"
+        url = ""
+        
+        if "IDSA" in citation_text:
+            source = "IDSA"
+            url = GUIDELINE_URLS.get("IDSA Guidelines for Community-Acquired Pneumonia", 
+                                    GUIDELINE_URLS["IDSA"])
+        elif "CDC" in citation_text:
+            source = "CDC"
+            url = GUIDELINE_URLS.get("CDC Legionella", GUIDELINE_URLS["CDC"])
+        elif "ATS/IDSA" in citation_text:
+            source = "ATS/IDSA"
+            url = GUIDELINE_URLS["ATS/IDSA"]
+        elif "ATS" in citation_text:
+            source = "ATS"
+            url = GUIDELINE_URLS["ATS"]
+        
+        citations.append({
+            "text": citation_text,
+            "url": url,
+            "source": source
+        })
+    
+    # Remove duplicate citations while preserving order
+    seen = set()
+    unique_citations = []
+    for c in citations:
+        if c["text"] not in seen:
+            seen.add(c["text"])
+            unique_citations.append(c)
+    
+    return text, unique_citations
 
 # ---------------------------------------------------------------------------
 # Clinical State -- compact structured representation of the debate
@@ -260,6 +335,12 @@ Provide a focused, evidence-based analysis. Be specific about which findings sup
         
         # Parse the structured response
         result = self._parse_orchestrator_response(synthesis_response.text)
+        
+        # RAG: Extract citations from ai_response
+        ai_response_text = result.get("ai_response", "")
+        _, citations = extract_citations(ai_response_text)
+        result["citations"] = citations
+        result["has_guidelines"] = len(citations) > 0
         
         # Update clinical state with new findings
         if result.get("key_findings_update"):

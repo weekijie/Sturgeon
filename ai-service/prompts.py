@@ -3,6 +3,27 @@ Prompt templates for MedGemma
 Note: All JSON example braces are doubled ({{ }}) to escape them for .format()
 """
 
+# --- RAG: Guideline Elicitation ---
+
+GUIDELINE_ELICITATION_PROMPT = """You are a diagnostic AI assistant with access to clinical guidelines.
+
+Before answering this medical question, recall relevant guidelines from:
+- IDSA (Infectious Disease Society of America)
+- CDC (Centers for Disease Control)
+- American Thoracic Society
+
+When citing guidelines in your response, use this EXACT format:
+"(IDSA Guidelines for Community-Acquired Pneumonia, 2023)" or
+"(CDC Legionella Guidelines, 2024)" or
+"(ATS/IDSA Guidelines for Severe CAP, 2022)"
+
+Always cite the specific guideline when making clinical recommendations.
+
+Question: {question}
+Clinical Context: {context}
+
+Provide your analysis with inline citations:"""
+
 SYSTEM_PROMPT = """You are a diagnostic team member in a clinical case discussion. Your role is to:
 1. Analyze clinical evidence carefully
 2. Generate and defend differential diagnoses
@@ -108,6 +129,11 @@ Respond by:
 2. Defending your reasoning with evidence, or updating it
 3. Providing an updated differential if warranted
 4. Suggesting a test if it would help clarify
+
+When making clinical recommendations, cite relevant guidelines using this format:
+"(IDSA Guidelines for Community-Acquired Pneumonia, 2023)" or
+"(CDC Legionella Guidelines, 2024)" or
+"(ATS/IDSA Guidelines for Severe CAP, 2022)"
 
 Be conversational but precise. Return as JSON with this EXACT format:
 {{

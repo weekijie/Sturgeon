@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Button, Input, Chip } from "@heroui/react";
-import { useCase, Diagnosis } from "../context/CaseContext";
+import { useCase, Diagnosis, Citation } from "../context/CaseContext";
 import Prose from "../../components/Prose";
 
 type Probability = "high" | "medium" | "low";
@@ -47,9 +47,22 @@ const SUGGESTED_PROMPTS = [
   "Summarize the key findings supporting your leading diagnosis",
 ];
 
+// Guideline Badge Component
+function GuidelineBadge({ hasGuidelines }: { hasGuidelines: boolean }) {
+  if (!hasGuidelines) return null;
+  
+  return (
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800 mt-2">
+      Clinical Guidelines Referenced
+    </span>
+  );
+}
+
 interface Message {
   role: "user" | "ai" | "error";
   content: string;
+  citations?: Citation[];
+  has_guidelines?: boolean;
 }
 
 export default function DebatePage() {
@@ -102,7 +115,12 @@ export default function DebatePage() {
       if (caseData.debateRounds.length > 0) {
         for (const round of caseData.debateRounds) {
           restoredMessages.push({ role: "user", content: round.user_challenge });
-          restoredMessages.push({ role: "ai", content: round.ai_response });
+          restoredMessages.push({ 
+            role: "ai", 
+            content: round.ai_response,
+            citations: round.citations,
+            has_guidelines: round.has_guidelines
+          });
         }
       }
       
@@ -166,8 +184,17 @@ export default function DebatePage() {
         aiText = prefixMatch[1].replace(/"?\s*,?\s*"(updated_differential|suggested_test|medgemma_query)[\s\S]*$/, "").replace(/["\s}]+$/, "");
       }
 
-      // Add AI response to messages
-      setMessages((prev) => [...prev, { role: "ai", content: aiText }]);
+      // RAG: Extract citations from response
+      const citations: Citation[] = data.citations || [];
+      const hasGuidelines = data.has_guidelines || false;
+      
+      // Add AI response to messages (with citations)
+      setMessages((prev) => [...prev, { 
+        role: "ai", 
+        content: aiText,
+        citations,
+        has_guidelines: hasGuidelines
+      }]);
       
       // 1H: Track previous differential for change highlighting
       if (data.updated_differential?.length > 0) {
@@ -176,10 +203,12 @@ export default function DebatePage() {
         updateDifferential(data.updated_differential);
       }
 
-      // Store debate round in context
+      // Store debate round in context (with RAG citations)
       addDebateRound({
         user_challenge: userMessage,
         ai_response: data.ai_response,
+        citations,
+        has_guidelines: hasGuidelines
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
@@ -455,6 +484,26 @@ export default function DebatePage() {
                     /* AI message */
                     <div className="bg-surface border-l-3 border-l-teal rounded-xl px-4 py-3">
                       <Prose content={msg.content} />
+                      
+                      {/* RAG: Guideline badge and citations */}
+                      {msg.has_guidelines && msg.citations && msg.citations.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-teal/20">
+                          <GuidelineBadge hasGuidelines={msg.has_guidelines} />
+                          <div className="mt-2 space-y-1">
+                            {msg.citations.map((citation, i) => (
+                              <a
+                                key={i}
+                                href={citation.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-teal-600 hover:text-teal-800 underline block"
+                              >
+                                {citation.text}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

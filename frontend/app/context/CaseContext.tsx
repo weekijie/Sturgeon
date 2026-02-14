@@ -11,9 +11,17 @@ export interface Diagnosis {
   suggested_tests: string[];
 }
 
+export interface Citation {
+  text: string;  // e.g., "(IDSA Guidelines for Community-Acquired Pneumonia, 2023)"
+  url: string;
+  source: string;  // e.g., "IDSA", "CDC", "ATS"
+}
+
 export interface DebateRound {
   user_challenge: string;
   ai_response: string;
+  citations?: Citation[];  // RAG: Clinical guideline citations
+  has_guidelines?: boolean;  // RAG: Whether guidelines were referenced
 }
 
 export interface ImageFinding {

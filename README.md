@@ -115,4 +115,6 @@ Sturgeon/
 
 ## License
 
-MIT
+[CC BY 4.0](LICENSE) - Creative Commons Attribution 4.0 International
+
+This project is licensed under CC BY 4.0 to comply with the MedGemma Impact Challenge winner obligations. You are free to use, modify, and distribute this work with attribution.

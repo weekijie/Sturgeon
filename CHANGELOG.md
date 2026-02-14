@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-02-14] Session 12 — Backend Modularization & UI Polish
+
+### Architecture
+- **Modular Backend**: Split `ai-service/main.py` (940 lines) into focused modules:
+  - `models.py` — All Pydantic request/response models
+  - `json_utils.py` — JSON extraction, repair, newline fixing utilities  
+  - `refusal.py` — Pure refusal detection (`_is_pure_refusal`) and preamble stripping (`_strip_refusal_preamble`)
+  - `formatters.py` — Lab values, differential, and debate rounds formatters
+  - `main.py` — Slim: app setup, lifespan, endpoint definitions (imports from above)
+
+### Added
+- **Backend Unit Tests** (`ai-service/tests/`, 41 tests passing):
+  - `test_json_utils.py` — JSON extraction, truncation repair, newline fixing
+  - `test_refusal.py` — Pure refusal detection, preamble stripping edge cases
+  - `test_formatters.py` — Lab/differential/rounds formatting
+- **Comprehensive Error Handling**: Try/except wrappers on all endpoints with performance timing logs
+- **Pydantic Validators**: Empty input prevention on `patient_history`, `lab_values`, `user_challenge`
+- **Few-Shot Prompts**: Added complete input/output examples to `extract-labs` and `differential` prompts for JSON stability
+- **Chain-of-Thought**: `DIFFERENTIAL_PROMPT` now includes "think step-by-step" instruction before JSON output
+- **Confidence Calibration**: `SUMMARY_PROMPT` requests numeric confidence 0-100 with calibration guidance
+
+### Frontend
+- **Upload Page**: Input validation with red error banner when neither patient history nor evidence is provided
+- **Debate Page**:
+  - Suggested Challenge chips above input field (static defaults: "What if...", "Could this be...", "What test would help?")
+  - Visual probability bars in sidebar diagnosis cards (green/yellow/red based on probability)
+  - Collapsible sidebar for mobile responsive layout
+- **Summary Page**: Export PDF button with `@media print` CSS (hides nav, optimizes layout)
+
+### Changed
+- Updated all endpoint error responses to include meaningful messages and timing metrics
+- Enhanced prompt stability through few-shot examples and explicit reasoning instructions
+
+---
+
 ## [2026-02-13] Session 2 - Multi-File Upload & Response Cleaning
 
 ### Added

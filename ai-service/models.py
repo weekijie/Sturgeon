@@ -2,7 +2,7 @@
 Pydantic request/response models for the Sturgeon AI Service API.
 """
 from pydantic import BaseModel, field_validator
-from typing import Optional
+from typing import Optional, List
 
 
 # --- Lab Extraction ---
@@ -74,12 +74,21 @@ class DebateTurnRequest(BaseModel):
         return v.strip()
 
 
+class Citation(BaseModel):
+    """A clinical guideline citation extracted from the AI response."""
+    text: str  # e.g., "(IDSA Guidelines for Community-Acquired Pneumonia, 2023)"
+    url: str   # Link to the guideline
+    source: str  # e.g., "IDSA", "CDC", "ATS"
+
+
 class DebateTurnResponse(BaseModel):
     ai_response: str
     updated_differential: list[Diagnosis]
     suggested_test: Optional[str] = None
     session_id: Optional[str] = None  # Returned for session continuity
     orchestrated: bool = False  # Whether Gemini orchestrator was used
+    citations: List[Citation] = []  # RAG: Clinical guideline citations
+    has_guidelines: bool = False  # RAG: Whether guidelines were referenced
 
 
 # --- Summary ---
