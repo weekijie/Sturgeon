@@ -408,34 +408,6 @@ export default function UploadPage() {
                       </div>
                     )}
                   </div>
-                    )}
-
-                    {/* Lab file chip */}
-                    {labFile && (
-                      <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                        <div className="text-success text-lg shrink-0">&#10003;</div>
-                        <p className="font-medium text-foreground text-sm truncate max-w-[120px] sm:max-w-[200px]" title={labFile.name}>
-                          {labFile.name}
-                        </p>
-                        <Chip size="sm" variant="flat" className="shrink-0">
-                          {(labFile.size / 1024).toFixed(1)} KB
-                        </Chip>
-                        <Chip size="sm" variant="flat" color="primary" className="shrink-0">
-                          Lab Report
-                        </Chip>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            clearLab();
-                          }}
-                          className="relative z-20 text-xs text-muted hover:text-danger transition-colors ml-1 shrink-0"
-                          title="Remove lab report"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )}
-                  </div>
 
                   {/* Add more / clear all */}
                   <div className="flex items-center justify-center gap-3">
@@ -508,8 +480,11 @@ export default function UploadPage() {
                             size="sm"
                             variant="flat"
                             color={f.score > 0.3 ? "warning" : "default"}
+                            className="max-w-full"
                           >
-                            {f.label} ({(f.score * 100).toFixed(0)}%)
+                            <span className="truncate max-w-[200px] sm:max-w-[250px] inline-block">
+                              {f.label} ({(f.score * 100).toFixed(0)}%)
+                            </span>
                           </Chip>
                         ))}
                       </div>

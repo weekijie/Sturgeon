@@ -87,6 +87,7 @@ $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 9. **Always load `heroui-react` skill** before making any frontend UI changes
 10. **Git: generate commit messages only**: Do NOT run `git add`, `git commit`, or `git push` commands. Instead, generate the commit message/description for the user to input manually via VS Code Source Control or GitHub Desktop. PowerShell's PSReadLine crashes on multiline commit messages (terminal buffer overflow), and `&&` chaining is not supported in older PowerShell versions.
 11. **Read before editing**: Always read/view the file (or relevant section) before making edits. Do not edit files blindly from memory — the file may have changed since you last saw it.
+12. **ALWAYS use `.venv/Scripts/python` for backend**: All Python commands (tests, scripts, pip installs) MUST use the virtual environment Python at `.venv/Scripts/python`. Never use system Python or global pip. This prevents dependency conflicts and ensures reproducibility.
 
 ---
 

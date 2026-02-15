@@ -38,6 +38,7 @@ try:
     from json_utils import extract_json
     from refusal import is_pure_refusal, strip_refusal_preamble
     from formatters import format_lab_values, format_differential, format_rounds
+    from rag_retriever import get_retriever, GuidelineRetriever
 except ImportError:
     from .medgemma import get_model
     from .medsiglip import get_siglip
@@ -52,6 +53,7 @@ except ImportError:
     from .json_utils import extract_json
     from .refusal import is_pure_refusal, strip_refusal_preamble
     from .formatters import format_lab_values, format_differential, format_rounds
+    from .rag_retriever import get_retriever, GuidelineRetriever
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -64,6 +66,7 @@ _sessions: dict[str, ClinicalState] = {}
 # Flags: which optional services are available?
 _gemini_available = False
 _siglip_available = False
+_rag_available = False
 
 
 # Model lifecycle - load on startup
@@ -106,6 +109,20 @@ async def lifespan(app: FastAPI):
         logger.warning("Falling back to MedGemma-only mode for debate turns.")
         _gemini_available = False
     
+    # Initialize RAG retriever (optional - graceful fallback)
+    global _rag_available
+    try:
+        retriever = get_retriever(guidelines_dir=os.path.join(os.path.dirname(__file__), "guidelines"))
+        if retriever.initialize():
+            _rag_available = True
+            logger.info(f"RAG retriever initialized. {retriever.indexing_stats['num_chunks']} guideline chunks indexed.")
+        else:
+            logger.warning("RAG retriever initialization failed. Continuing without vector retrieval.")
+            _rag_available = False
+    except Exception as e:
+        logger.warning(f"RAG retriever not available: {e}")
+        _rag_available = False
+    
     logger.info("Ready to serve requests.")
     yield
     logger.info("Shutting down...")
@@ -138,10 +155,35 @@ async def health_check():
         "model_loaded": model.model is not None,
         "medsiglip_loaded": _siglip_available,
         "gemini_orchestrator": _gemini_available,
+        "rag_retriever": _rag_available,
         "mode": "agentic" if _gemini_available else "medgemma-only",
         "image_triage": "medsiglip+medgemma" if _siglip_available else "medgemma-only",
+        "guideline_retrieval": "vector-rag" if _rag_available else "prompt-only",
         "active_sessions": len(_sessions),
     }
+
+
+@app.get("/rag-status")
+async def rag_status():
+    """Get RAG retriever status and statistics."""
+    if not _rag_available:
+        return {
+            "available": False,
+            "message": "RAG retriever not initialized. Check if chromadb and sentence-transformers are installed."
+        }
+    
+    try:
+        retriever = get_retriever()
+        status = retriever.get_status()
+        return {
+            "available": True,
+            **status
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e)
+        }
 
 
 @app.post("/extract-labs", response_model=ExtractLabsResponse)
@@ -325,7 +367,47 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
     medical reasoning."""
     orchestrator = get_orchestrator()
     
-    # Get or create session
+    # Start RAG retrieval in parallel with session setup
+    rag_task = None
+    if _rag_available:
+        # Distance threshold: ChromaDB returns L2 distance; lower = more relevant
+        # 1.3 filters out marginally relevant chunks (e.g., pneumonia docs for headache case)
+        RAG_DISTANCE_THRESHOLD = 1.3
+        
+        async def fetch_rag_context():
+            try:
+                retriever = get_retriever()
+                # Use the user's challenge directly — no hardcoded fallback keywords
+                # Let semantic search find relevant guidelines naturally
+                rag_query = request.user_challenge
+                chunks, rag_error = await asyncio.to_thread(
+                    retriever.retrieve,
+                    query=rag_query,
+                    ip_address="internal",
+                    top_k=3
+                )
+                if rag_error:
+                    logger.warning(f"[RAG] Retrieval error: {rag_error}")
+                    return ""
+                elif chunks:
+                    # Filter by distance threshold — only keep semantically relevant chunks
+                    relevant_chunks = [c for c in chunks if c.distance <= RAG_DISTANCE_THRESHOLD]
+                    if relevant_chunks:
+                        logger.info(f"[RAG] {len(relevant_chunks)}/{len(chunks)} chunks passed distance threshold ({RAG_DISTANCE_THRESHOLD})")
+                        for c in relevant_chunks:
+                            logger.info(f"[RAG]   {c.organization}/{c.topic} (distance={c.distance:.3f})")
+                        return retriever.format_retrieved_context(relevant_chunks)
+                    else:
+                        logger.info(f"[RAG] All {len(chunks)} chunks below relevance threshold (closest: {chunks[0].distance:.3f})")
+                        return ""
+                return ""
+            except Exception as e:
+                logger.warning(f"[RAG] Retrieval failed: {e}")
+                return ""
+        
+        rag_task = asyncio.create_task(fetch_rag_context())
+    
+    # Get or create session (happens in parallel with RAG)
     session_id = request.session_id or str(uuid.uuid4())
     if session_id not in _sessions:
         _sessions[session_id] = ClinicalState(
@@ -341,6 +423,18 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
     # Keep differential in sync with frontend state
     clinical_state.differential = [d.model_dump() for d in request.current_differential]
     
+    # Wait for RAG retrieval to complete (with timeout)
+    retrieved_context = ""
+    if rag_task:
+        try:
+            t_rag_start = time.time()
+            retrieved_context = await asyncio.wait_for(rag_task, timeout=5.0)
+            t_rag_end = time.time()
+            logger.info(f"[RAG] Retrieved context in {t_rag_end-t_rag_start:.2f}s")
+        except asyncio.TimeoutError:
+            logger.warning("[RAG] Retrieval timed out after 5s, proceeding without guidelines")
+            retrieved_context = ""
+    
     try:
         t0 = time.time()
         # Run synchronous orchestrator call in a thread to avoid blocking the event loop
@@ -348,7 +442,8 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
             orchestrator.process_debate_turn,
             user_challenge=request.user_challenge,
             clinical_state=clinical_state,
-            previous_rounds=request.previous_rounds[-3:] if request.previous_rounds else None,
+            previous_rounds=request.previous_rounds if request.previous_rounds else [],
+            retrieved_context=retrieved_context,  # Pass RAG context
         )
         t1 = time.time()
         logger.info(f"[debate-turn] orchestrated total={t1-t0:.2f}s")
@@ -380,21 +475,70 @@ async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnRe
     try:
         t0 = time.time()
         model = get_model()
+        
+        # Start RAG retrieval in parallel with prompt formatting
+        rag_task = None
+        if _rag_available:
+            async def fetch_rag_context():
+                try:
+                    retriever = get_retriever()
+                    rag_query = f"{request.user_challenge} pneumonia sepsis severity assessment treatment"
+                    chunks, rag_error = await asyncio.to_thread(
+                        retriever.retrieve,
+                        query=rag_query,
+                        ip_address="internal",
+                        top_k=3
+                    )
+                    if not rag_error and chunks:
+                        return retriever.format_retrieved_context(chunks)
+                    return ""
+                except Exception as e:
+                    logger.warning(f"[RAG fallback] Retrieval failed: {e}")
+                    return ""
+            
+            rag_task = asyncio.create_task(fetch_rag_context())
+        
+        # Format prompts in parallel with RAG
         formatted_labs = format_lab_values(request.lab_values)
         formatted_diff = format_differential([d.model_dump() for d in request.current_differential])
         formatted_rounds = format_rounds(request.previous_rounds)
-        
-        # Include image context if available
         image_context = request.image_context or "No image evidence available"
         
-        prompt = DEBATE_TURN_PROMPT.format(
-            patient_history=request.patient_history,
-            formatted_lab_values=formatted_labs,
-            current_differential=formatted_diff,
-            previous_rounds=formatted_rounds,
-            user_challenge=request.user_challenge,
-            image_context=image_context,
-        )
+        # Wait for RAG retrieval
+        retrieved_guidelines = ""
+        if rag_task:
+            try:
+                t_rag_start = time.time()
+                retrieved_guidelines = await asyncio.wait_for(rag_task, timeout=5.0)
+                t_rag_end = time.time()
+                logger.info(f"[RAG fallback] Retrieved context in {t_rag_end-t_rag_start:.2f}s")
+            except asyncio.TimeoutError:
+                logger.warning("[RAG fallback] Retrieval timed out after 5s")
+                retrieved_guidelines = ""
+        
+        # Import the modified prompt
+        from prompts import DEBATE_TURN_PROMPT_WITH_RAG
+        
+        # Use RAG-enhanced prompt if available, otherwise standard prompt
+        if retrieved_guidelines:
+            prompt = DEBATE_TURN_PROMPT_WITH_RAG.format(
+                patient_history=request.patient_history,
+                formatted_lab_values=formatted_labs,
+                current_differential=formatted_diff,
+                previous_rounds=formatted_rounds,
+                user_challenge=request.user_challenge,
+                image_context=image_context,
+                retrieved_guidelines=retrieved_guidelines,
+            )
+        else:
+            prompt = DEBATE_TURN_PROMPT.format(
+                patient_history=request.patient_history,
+                formatted_lab_values=formatted_labs,
+                current_differential=formatted_diff,
+                previous_rounds=formatted_rounds,
+                user_challenge=request.user_challenge,
+                image_context=image_context,
+            )
         
         # Run blocking MedGemma inference in a thread
         response = await asyncio.to_thread(

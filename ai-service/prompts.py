@@ -153,6 +153,61 @@ Be conversational but precise. Return as JSON with this EXACT format:
 JSON Response:"""
 
 
+DEBATE_TURN_PROMPT_WITH_RAG = """You are in a diagnostic debate. The current case and your previous reasoning are below.
+
+Patient History:
+{patient_history}
+
+Lab Values:
+{formatted_lab_values}
+
+Current Differential:
+{current_differential}
+
+Previous Reasoning:
+{previous_rounds}
+
+Image Analysis (if available):
+{image_context}
+
+{retrieved_guidelines}
+
+The clinician challenges your thinking:
+"{user_challenge}"
+
+Respond by:
+1. Acknowledging the point if valid
+2. Defending your reasoning with evidence from the case AND the retrieved guidelines above
+3. Citing specific guideline recommendations when making clinical points
+4. Providing an updated differential if warranted
+5. Suggesting a test if it would help clarify
+
+CRITICAL: You MUST cite the retrieved guidelines above when making clinical recommendations. Do not hallucinate citations - only use the guidelines provided in the [RETRIEVED CLINICAL GUIDELINES] section.
+
+When citing, use this format:
+"(IDSA Guidelines for Community-Acquired Pneumonia, 2019)" or
+"(CDC Legionella Clinical Guidance, 2025)" or
+"(BTS CAP Guidelines, 2009)" or
+"(Surviving Sepsis Campaign, 2021)"
+
+Be conversational but precise. Return as JSON with this EXACT format:
+{{
+  "ai_response": "Your conversational response to the challenge with inline guideline citations",
+  "updated_differential": [
+    {{
+      "name": "Diagnosis Name",
+      "probability": "high|medium|low",
+      "supporting_evidence": ["evidence 1", "evidence 2"],
+      "against_evidence": ["counter 1"],
+      "suggested_tests": ["test 1"]
+    }}
+  ],
+  "suggested_test": "optional test name or null"
+}}
+
+JSON Response:"""
+
+
 SUMMARY_PROMPT = """Generate a final diagnosis summary based on the case discussion.
 
 Patient History:

@@ -187,6 +187,51 @@ class TestCitationExtraction:
         assert citations[0]["source"] == "ESMO"
         assert citations[0]["url"] == GUIDELINE_URLS["ESMO"]
     
+    def test_bts_citation(self):
+        """Test BTS (British Thoracic Society) citations."""
+        text = "(BTS CAP Guidelines, 2009) recommends severity assessment."
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "BTS"
+        assert citations[0]["url"] == GUIDELINE_URLS["BTS"]
+    
+    def test_sccm_citation(self):
+        """Test SCCM (Society of Critical Care Medicine) citations."""
+        text = "(SCCM Guidelines for Sepsis, 2021) recommends early resuscitation."
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "SCCM"
+        assert citations[0]["url"] == GUIDELINE_URLS["SCCM"]
+    
+    def test_esicm_citation(self):
+        """Test ESICM (European Society of Intensive Care Medicine) citations."""
+        text = "(ESICM Guidelines for ICU Management, 2022) recommends..."
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "ESICM"
+        assert citations[0]["url"] == GUIDELINE_URLS["ESICM"]
+    
+    def test_ssc_citation(self):
+        """Test SSC (Surviving Sepsis Campaign) citations."""
+        text = "(Surviving Sepsis Campaign Guidelines, 2021) recommends bundles."
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "SSC"
+        assert citations[0]["url"] == GUIDELINE_URLS["SSC"]
+    
+    def test_pmc_citation(self):
+        """Test PMC (PubMed Central) citations."""
+        text = "(PMC Guidelines for Pneumonia Evaluation, 2018) recommends imaging."
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "PMC"
+        assert citations[0]["url"] == GUIDELINE_URLS["PMC"]
+    
     def test_multiple_citations(self):
         """Test extraction of multiple citations in one text."""
         text = """Treatment should follow (IDSA Guidelines for CAP, 2023) and 
@@ -231,6 +276,33 @@ class TestCitationExtraction:
         
         assert len(citations) == 1
         assert citations[0]["source"] == "NCCN"
+    
+    def test_according_to_cdc_not_mapped_to_acc(self):
+        """REGRESSION: CDC citation should map to CDC URL, not ACC URL.
+        
+        Bug: "According to the CDC..." when uppercased becomes "ACCORDING TO THE CDC..."
+        which contains "ACC" as substring. Fix: check CDC before ACC in elif chain.
+        """
+        text = "According to the CDC Clinical Guidance for Legionella (2025), testing is indicated."
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "CDC", f"Expected CDC, got {citations[0]['source']}"
+        assert citations[0]["url"] == GUIDELINE_URLS["CDC"], f"Wrong URL: {citations[0]['url']}"
+    
+    def test_according_to_duplicate_dedup(self):
+        """REGRESSION: 'According to PMC...' and '(PMC...)' should deduplicate.
+        
+        Bug: Same citation extracted twice - once as parenthetical and once with
+        "According to" prefix. Fix: normalize by source+year for dedup.
+        """
+        text = """(PMC Guidelines for Pneumonia Evaluation, 2018) recommends imaging.
+        According to the PMC Guidelines for Pneumonia Evaluation (2018), imaging is mandatory."""
+        _, citations = extract_citations(text)
+        
+        # Should have only 1 unique citation (same source + year)
+        assert len(citations) == 1, f"Expected 1 citation, got {len(citations)}: {citations}"
+        assert citations[0]["source"] == "PMC"
 
 
 class TestGuidelineUrls:
@@ -242,7 +314,9 @@ class TestGuidelineUrls:
             "IDSA", "CDC", "ATS", "ATS/IDSA",
             "NCCN", "ASCO", "ESMO",
             "AAD", "ACR", "ADA", "AHA", "ACC", "ACC/AHA",
-            "CHEST", "USPSTF", "WHO", "NICE"
+            "CHEST", "USPSTF", "WHO", "NICE",
+            # New organizations for RAG guideline corpus
+            "BTS", "SCCM", "ESICM", "SSC", "PMC"
         ]
         
         for org in expected_orgs:

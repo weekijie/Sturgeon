@@ -544,16 +544,18 @@ export default function DebatePage() {
 
             {/* 1B: Suggested challenge prompts */}
             {!isLoading && messages.length > 0 && (
-              <div className="max-w-4xl mx-auto mb-3 flex gap-2 overflow-x-auto pb-2 px-1 -mx-1 scrollbar-hide snap-x snap-mandatory">
-                {SUGGESTED_PROMPTS.map((prompt, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSuggestedPrompt(prompt)}
-                    className="shrink-0 text-xs px-3 py-1.5 rounded-full border border-teal/30 text-teal hover:bg-teal hover:text-white transition-colors whitespace-nowrap snap-start"
-                  >
-                    {prompt}
-                  </button>
-                ))}
+              <div className="max-w-4xl mx-auto mb-3 overflow-hidden">
+                <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-thin scrollbar-thumb-teal/30 scrollbar-track-transparent hover:scrollbar-thumb-teal/50 snap-x snap-mandatory" style={{ WebkitOverflowScrolling: 'touch' }}>
+                  {SUGGESTED_PROMPTS.map((prompt, i) => (
+                    <button
+                      key={i}
+                      onClick={() => handleSuggestedPrompt(prompt)}
+                      className="shrink-0 text-xs px-3 py-1.5 rounded-full border border-teal/30 text-teal hover:bg-teal hover:text-white transition-colors whitespace-nowrap snap-start"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

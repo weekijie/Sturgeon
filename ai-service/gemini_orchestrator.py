@@ -15,6 +15,8 @@ import os
 import json
 import logging
 import re
+import asyncio
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field, asdict
 from typing import Optional, List, Dict, Tuple
 
@@ -23,19 +25,31 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
+# Timeout configuration for API calls
+DEFAULT_TIMEOUT_SECONDS = 90.0
+
 
 # ---------------------------------------------------------------------------
 # RAG: Citation Parser
 # ---------------------------------------------------------------------------
 
 # Mapping of guideline citations to their URLs
-# These are generic landing pages - Phase B will use specific URLs from retrieved chunks
+# These are specific guideline URLs - Phase B RAG uses these as fallbacks
 GUIDELINE_URLS: Dict[str, str] = {
     # Infectious Disease
-    "IDSA": "https://www.idsociety.org/practice-guideline/",
-    "CDC": "https://www.cdc.gov/professionals/",
+    "IDSA": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+    "CDC": "https://www.cdc.gov/legionella/hcp/clinical-guidance/index.html",
     "ATS": "https://www.thoracic.org/practice-guidelines/",
-    "ATS/IDSA": "https://www.thoracic.org/practice-guidelines/",
+    "ATS/IDSA": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+    # Pulmonary - UK
+    "BTS": "https://www.brit-thoracic.org.uk/document-library/guidelines/pneumonia-adults/quick-reference-guide-bts-guidelines-for-the-management-of-community-acquired-pneumonia-in-adults/",
+    # Critical Care / Sepsis
+    "SCCM": "https://www.sccm.org/survivingsepsiscampaign/guidelines-and-resources/surviving-sepsis-campaign-adult-guidelines",
+    "ESICM": "https://www.esicm.org/guidelines/",
+    "SSC": "https://www.sccm.org/survivingsepsiscampaign/guidelines-and-resources/surviving-sepsis-campaign-adult-guidelines",
+    # Medical Literature
+    "PMC": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7112285/",
+    "PubMed": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7112285/",
     # Cancer / Oncology
     "NCCN": "https://www.nccn.org/guidelines/",
     "ASCO": "https://www.asco.org/practice-patients/guidelines",
@@ -82,8 +96,9 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
     seen_spans = set()  # Track (start, end) positions to avoid duplicates
     
     # All medical organizations to detect - longer/specific ones first to avoid partial matches
-    ORGS = r'USPSTF|CHEST|NCCN|ASCO|ESMO|AAD|ACR|ADA|AHA|ACC|IDSA|CDC|ATS|WHO|NICE'
-    COMBO_ORGS = r'ATS/IDSA|ACC/AHA'
+    # Added: BTS, SCCM, ESICM, PMC, SSC, PubMed for RAG guideline corpus
+    ORGS = r'USPSTF|SCCM|ESICM|CHEST|NCCN|ASCO|ESMO|AAD|ACR|ADA|AHA|ACC|IDSA|CDC|ATS|WHO|NICE|BTS|PMC|PubMed|SSC'
+    COMBO_ORGS = r'ATS/IDSA|ACC/AHA|Surviving Sepsis Campaign'
     
     # Pattern 1: Full citations in parentheses with year
     # Matches: (IDSA Guidelines for Community-Acquired Pneumonia, 2023)
@@ -129,13 +144,33 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
         source = "Unknown"
         url = ""
         
-        # Check for combined organizations first (ATS/IDSA, ACC/AHA)
+        # Check for combined organizations first (ATS/IDSA, ACC/AHA, Surviving Sepsis Campaign)
         if "ATS/IDSA" in citation_upper or ("ATS" in citation_upper and "IDSA" in citation_upper):
             source = "ATS/IDSA"
             url = GUIDELINE_URLS.get("ATS/IDSA", GUIDELINE_URLS.get("ATS", ""))
         elif "ACC/AHA" in citation_upper or ("ACC" in citation_upper and "AHA" in citation_upper):
             source = "ACC/AHA"
             url = GUIDELINE_URLS.get("ACC/AHA", GUIDELINE_URLS.get("AHA", ""))
+        elif "SURVIVING SEPSIS CAMPAIGN" in citation_upper or "SSC" in citation_upper:
+            # Surviving Sepsis Campaign guidelines
+            source = "SSC"
+            url = GUIDELINE_URLS.get("SSC", "")
+        elif "SCCM" in citation_upper:
+            # Society of Critical Care Medicine
+            source = "SCCM"
+            url = GUIDELINE_URLS.get("SCCM", "")
+        elif "ESICM" in citation_upper:
+            # European Society of Intensive Care Medicine
+            source = "ESICM"
+            url = GUIDELINE_URLS.get("ESICM", "")
+        elif "BTS" in citation_upper:
+            # British Thoracic Society
+            source = "BTS"
+            url = GUIDELINE_URLS.get("BTS", "")
+        elif "PUBMED" in citation_upper or "PMC" in citation_upper:
+            # PubMed Central
+            source = "PMC"
+            url = GUIDELINE_URLS.get("PMC", "")
         elif "ADA" in citation_upper and "AAD" in citation_upper:
             # Disambiguate: AAD (dermatology) vs ADA (diabetes)
             context_window = text[max(0, span[0] - 200):min(len(text), span[1] + 200)].upper()
@@ -170,15 +205,9 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
         elif "AHA" in citation_upper:
             source = "AHA"
             url = GUIDELINE_URLS.get("AHA", "")
-        elif "ACC" in citation_upper:
-            source = "ACC"
-            url = GUIDELINE_URLS.get("ACC", "")
         elif "CHEST" in citation_upper:
             source = "CHEST"
             url = GUIDELINE_URLS.get("CHEST", "")
-        elif "USPSTF" in citation_upper:
-            source = "USPSTF"
-            url = GUIDELINE_URLS.get("USPSTF", "")
         elif "WHO" in citation_upper:
             source = "WHO"
             url = GUIDELINE_URLS.get("WHO", "")
@@ -191,6 +220,9 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
         elif "CDC" in citation_upper:
             source = "CDC"
             url = GUIDELINE_URLS.get("CDC", "")
+        elif "ACC" in citation_upper:
+            source = "ACC"
+            url = GUIDELINE_URLS.get("ACC", "")
         elif "ATS" in citation_upper:
             source = "ATS"
             url = GUIDELINE_URLS.get("ATS", "")
@@ -206,12 +238,24 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
             "source": source
         })
     
-    # Remove duplicate citations while preserving order
+    def _normalize_citation_key(c: dict) -> str:
+        """Normalize citation for dedup: strip 'According to the' prefix, use source + year."""
+        text = c["text"]
+        # Strip common prefixes
+        text = re.sub(r"^\(?\s*(?:According to the|Per the|Based on the)\s+", "", text, flags=re.IGNORECASE)
+        # Extract year
+        year_match = re.search(r"\d{4}", text)
+        year = year_match.group(0) if year_match else ""
+        # Normalize to source + year
+        return f"{c['source']}:{year}"
+    
+    # Remove duplicate citations while preserving order (dedupe by normalized key)
     seen = set()
     unique_citations = []
     for c in citations:
-        if c["text"] not in seen:
-            seen.add(c["text"])
+        key = _normalize_citation_key(c)
+        if key not in seen:
+            seen.add(key)
             unique_citations.append(c)
     
     return text, unique_citations
@@ -235,6 +279,8 @@ class ClinicalState:
     ruled_out: list[str] = field(default_factory=list)
     debate_round: int = 0
     image_context: str = ""  # MedSigLIP triage + MedGemma interpretation
+    episode_summaries: list[str] = field(default_factory=list)  # Summaries of 5-round episodes
+    last_episode_round: int = 0  # Track when we last created an episode summary
     
     def to_summary(self) -> str:
         """Produce a compact text summary for Gemini's context."""
@@ -270,6 +316,14 @@ class ClinicalState:
         
         if self.ruled_out:
             lines.append("Ruled Out: " + ", ".join(self.ruled_out))
+        
+        # Include episode summaries for longer debates (hierarchical summarization)
+        if self.episode_summaries:
+            lines.append("\n=== Previous Debate Episodes ===")
+            # Show last 3 episodes (most recent first)
+            for i, summary in enumerate(reversed(self.episode_summaries[-3:]), 1):
+                episode_num = len(self.episode_summaries) - i + 1
+                lines.append(f"Episode {episode_num}: {summary[:250]}...")
         
         return "\n".join(lines)
     
@@ -313,6 +367,14 @@ IMPORTANT RULES:
 - If the user raises a point that changes the differential, reflect that in the updated diagnoses
 - When defending a diagnosis, provide specific evidence, not vague claims
 
+CONSTRAINTS (for timely responses):
+- Keep responses under 800 tokens (~600 words) to ensure delivery within 90 seconds
+- Focus on the 2-3 most critical differential diagnoses
+- Cite evidence concisely (1-2 sentences per point)
+- Suggest at most 1 test per round
+- Avoid repeating information from previous rounds or episode summaries
+- If a query is too complex or multi-part, ask the user to break it into smaller questions
+
 You must ALWAYS respond with valid JSON in this exact format:
 {
   "ai_response": "Your conversational response to the user's challenge",
@@ -340,9 +402,11 @@ class GeminiOrchestrator:
         self.client = None
         self.medgemma = medgemma_model
         self._model_name = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+        # ThreadPoolExecutor for MedGemma calls with timeout
+        self._medgemma_executor = ThreadPoolExecutor(max_workers=1)
     
     def initialize(self, api_key: str = None):
-        """Initialize the Gemini client."""
+        """Initialize the Gemini client with timeout configuration."""
         key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise RuntimeError(
@@ -350,8 +414,19 @@ class GeminiOrchestrator:
                 "environment variable, or pass api_key to initialize()."
             )
         
-        self.client = genai.Client(api_key=key, http_options={"timeout": 60000})
-        logger.info(f"Gemini orchestrator initialized with model: {self._model_name}")
+        # Configure timeout: 90 seconds (90000 milliseconds)
+        timeout_ms = int(DEFAULT_TIMEOUT_SECONDS * 1000)
+        self.client = genai.Client(
+            api_key=key, 
+            http_options=types.HttpOptions(timeout=timeout_ms)
+        )
+        logger.info(f"Gemini orchestrator initialized with model: {self._model_name} (timeout: {DEFAULT_TIMEOUT_SECONDS}s)")
+    
+    def cleanup(self):
+        """Cleanup resources including thread pool executor."""
+        if hasattr(self, '_medgemma_executor'):
+            self._medgemma_executor.shutdown(wait=True)
+            logger.info("MedGemma executor shut down")
     
     def _query_medgemma(self, question: str, clinical_context: str) -> str:
         """Send a focused, single-turn question to MedGemma.
@@ -386,11 +461,61 @@ Provide a focused, evidence-based analysis. Be specific about which findings sup
         logger.info(f"MedGemma response: {len(response)} chars")
         return response
     
+    async def _query_medgemma_with_timeout(
+        self, 
+        question: str, 
+        clinical_context: str, 
+        timeout: float = DEFAULT_TIMEOUT_SECONDS
+    ) -> str:
+        """Query MedGemma with timeout protection.
+        
+        Args:
+            question: The medical question to ask
+            clinical_context: Context about the patient case
+            timeout: Maximum time to wait in seconds (default: 90s)
+            
+        Returns:
+            MedGemma's response, or a timeout message if query takes too long
+        """
+        try:
+            # Run MedGemma query in thread with timeout
+            response = await asyncio.wait_for(
+                asyncio.to_thread(self._query_medgemma, question, clinical_context),
+                timeout=timeout
+            )
+            return response
+        except asyncio.TimeoutError:
+            logger.warning(f"MedGemma query timed out after {timeout}s. Question: {question[:100]}...")
+            return self._generate_timeout_response(question)
+    
+    def _generate_timeout_response(self, question: str) -> str:
+        """Generate a graceful timeout response when MedGemma takes too long.
+        
+        This provides helpful guidance to the user when complex queries timeout.
+        """
+        return f"""The medical analysis is taking longer than expected (>{DEFAULT_TIMEOUT_SECONDS}s).
+
+This typically happens when the question involves complex multi-part reasoning.
+
+RECOMMENDATIONS:
+1. Try breaking your question into smaller, focused parts
+2. Ask about one specific symptom or finding at a time
+3. Focus on the most critical differential diagnoses first
+
+For example, instead of asking multiple questions at once:
+- Ask: "What could explain the low platelets?"
+- Then: "Should we test for Legionella?"
+
+Your current question was: "{question[:150]}..."
+
+Please try rephrasing as a single, focused question."""
+    
     def process_debate_turn(
         self,
         user_challenge: str,
         clinical_state: ClinicalState,
         previous_rounds: list[dict] = None,
+        retrieved_context: str = "",
     ) -> dict:
         """Process a single debate turn through the Gemini orchestrator.
         
@@ -404,6 +529,7 @@ Provide a focused, evidence-based analysis. Be specific about which findings sup
             user_challenge: The user's challenge/question
             clinical_state: Current structured clinical state
             previous_rounds: Last few rounds for immediate context (max 3)
+            retrieved_context: Retrieved guideline context from RAG (optional)
             
         Returns:
             dict with ai_response, updated_differential, suggested_test, etc.
@@ -432,13 +558,21 @@ Provide a focused, evidence-based analysis. Be specific about which findings sup
         medgemma_question = query_response.text.strip()
         logger.info(f"Gemini formulated MedGemma question: {medgemma_question[:150]}...")
         
-        # --- Step 2: Query MedGemma with the focused question ---
-        medgemma_analysis = self._query_medgemma(medgemma_question, state_summary)
+        # --- Step 2: Query MedGemma with the focused question (with timeout) ---
+        try:
+            # Submit MedGemma query to thread pool with timeout
+            future = self._medgemma_executor.submit(
+                self._query_medgemma, medgemma_question, state_summary
+            )
+            medgemma_analysis = future.result(timeout=DEFAULT_TIMEOUT_SECONDS)
+        except FutureTimeoutError:
+            logger.warning(f"MedGemma query timed out after {DEFAULT_TIMEOUT_SECONDS}s")
+            medgemma_analysis = self._generate_timeout_response(medgemma_question)
         
         # --- Step 3: Ask Gemini to synthesize the final response ---
         synthesis_prompt = self._build_synthesis_prompt(
             user_challenge, state_summary, medgemma_question,
-            medgemma_analysis, previous_rounds
+            medgemma_analysis, previous_rounds, retrieved_context
         )
         
         synthesis_response = self.client.models.generate_content(
@@ -471,11 +605,23 @@ Provide a focused, evidence-based analysis. Be specific about which findings sup
         
         # Update clinical state with new findings
         if result.get("key_findings_update"):
-            clinical_state.key_findings.extend(result["key_findings_update"])
+            clinical_state.key_findings.extend(result.get("key_findings_update", []))
         if result.get("newly_ruled_out"):
-            clinical_state.ruled_out.extend(result["newly_ruled_out"])
+            clinical_state.ruled_out.extend(result.get("newly_ruled_out", []))
         if result.get("updated_differential"):
-            clinical_state.differential = result["updated_differential"]
+            clinical_state.differential = result.get("updated_differential", [])
+        
+        # Hierarchical Summarization: Create episode summary every 5 rounds
+        rounds_since_last_episode = clinical_state.debate_round - clinical_state.last_episode_round
+        logger.info(f"[Episode] round={clinical_state.debate_round}, last_episode={clinical_state.last_episode_round}, rounds_since={rounds_since_last_episode}, previous_rounds={len(previous_rounds) if previous_rounds else 0}")
+        if rounds_since_last_episode >= 5 and previous_rounds:
+            # Get the last 5 rounds for this episode
+            episode_rounds = previous_rounds[-5:]
+            episode_summary = self._create_episode_summary(episode_rounds)
+            if episode_summary:
+                clinical_state.episode_summaries.append(episode_summary)
+                clinical_state.last_episode_round = clinical_state.debate_round
+                logger.info(f"Created episode summary at round {clinical_state.debate_round}")
         
         return result
     
@@ -522,6 +668,7 @@ Respond with ONLY the question, nothing else."""
         medgemma_question: str,
         medgemma_analysis: str,
         previous_rounds: list[dict] = None,
+        retrieved_context: str = "",
     ) -> str:
         """Build the prompt that asks Gemini to synthesize MedGemma's analysis
         into a conversational response."""
@@ -536,6 +683,21 @@ Respond with ONLY the question, nothing else."""
                 parts.append(f"User: {challenge}\nAI: {response[:300]}")
             recent_context = f"\nRecent conversation:\n" + "\n".join(parts)
         
+        # Build the prompt with optional RAG context
+        rag_section = ""
+        citation_instruction = ""
+        if retrieved_context:
+            rag_section = f"""
+
+RETRIEVED EVIDENCE-BASED GUIDELINES:
+{retrieved_context}
+
+You MUST cite ONLY the above retrieved guidelines when making clinical recommendations. Do not hallucinate citations for guidelines that were not retrieved. If no guidelines were retrieved, do not cite any.
+"""
+            citation_instruction = """3. Cite the retrieved guidelines using the EXACT format: "(Organization Title, Year)" — only cite guidelines that were actually provided above"""
+        else:
+            citation_instruction = """3. Do NOT cite any clinical guidelines — none were retrieved for this topic. Focus purely on clinical reasoning from MedGemma's analysis"""
+        
         return f"""{state_summary}
 {recent_context}
 
@@ -545,30 +707,25 @@ You asked your medical specialist: "{medgemma_question}"
 
 MedGemma's analysis:
 {medgemma_analysis}
+{rag_section}
 
 Now synthesize this into your response. You must:
 1. Address the user's challenge directly and conversationally
 2. Incorporate MedGemma's analysis with specific evidence citations
-3. Cite relevant clinical guidelines when making recommendations using this EXACT format:
-   - Cancer: "(NCCN Guidelines for Melanoma, 2024)" or "(ASCO Melanoma Guidelines, 2023)"
-   - Dermatology: "(AAD Guidelines for Management of Primary Cutaneous Melanoma, 2019)"
-   - Infectious Disease: "(IDSA Guidelines for Community-Acquired Pneumonia, 2023)" or "(CDC Legionella Guidelines, 2024)"
-   - Radiology: "(ACR Appropriateness Criteria for Soft Tissue Masses, 2022)"
-   - Cardiology: "(ACC/AHA Guidelines for Heart Failure, 2022)"
-   - Diabetes: "(ADA Standards of Care in Diabetes, 2024)"
-   - Pulmonary: "(CHEST Guidelines for Venous Thromboembolism, 2021)"
-   - Preventive Care: "(USPSTF Recommendation for Skin Cancer Screening, 2023)"
-   - Global Health: "(WHO Guidelines for Cancer Pain Relief, 2023)"
+{citation_instruction}
 4. Update the differential if warranted by the analysis
 5. Suggest a test if it would help clarify
 
-CRITICAL: The "ai_response" field must be a plain conversational text string, NOT a JSON object or nested JSON. Write it as you would speak to a colleague. Include guideline citations naturally within your text."""
+CRITICAL: The "ai_response" field must be a plain conversational text string, NOT a JSON object or nested JSON. Write it as you would speak to a colleague."""
     
     def _parse_orchestrator_response(self, text: str) -> dict:
         """Parse Gemini's JSON response with fallback handling.
         
-        Handles a known issue where Gemini sometimes double-wraps JSON:
-        the ai_response field contains a JSON string instead of plain text.
+        Handles:
+        1. JSON in code blocks
+        2. Missing commas between fields
+        3. Truncated JSON (token limit hit mid-string) — extracts ai_response via regex
+        4. Double-wrapped JSON (ai_response contains JSON string)
         """
         import re
         
@@ -588,19 +745,90 @@ CRITICAL: The "ai_response" field must be a plain conversational text string, NO
         except json.JSONDecodeError as e:
             # Attempt to repair common JSON errors (e.g., missing commas between fields)
             try:
-                import re
                 # Insert missing commas between quote-key pairs
                 fixed_text = re.sub(r'"\s*\n\s*"', '",\n"', text)
                 data = json.loads(fixed_text)
                 logger.info("Successfully repaired malformed JSON (missing commas)")
             except json.JSONDecodeError:
-                logger.error(f"Failed to parse Gemini response: {e}\nText: {text[:500]}")
-                # Return a safe fallback
-                data = {
-                    "ai_response": text[:500] if text else "I need to reconsider this case.",
-                    "updated_differential": [],
-                    "suggested_test": None,
-                }
+                # Likely truncated JSON from token limit — extract ai_response via regex
+                logger.warning(f"JSON parse failed: {e}. Attempting regex extraction from truncated response.")
+                ai_match = re.search(
+                    r'"ai_response"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)',
+                    text, re.DOTALL
+                )
+                if ai_match:
+                    extracted = ai_match.group(1)
+                    # Unescape JSON string escapes
+                    extracted = extracted.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\')
+                    logger.info(f"Extracted ai_response via regex ({len(extracted)} chars)")
+                    data = {
+                        "ai_response": extracted,
+                        "updated_differential": [],
+                        "suggested_test": None,
+                    }
+                else:
+                    logger.error(f"Failed to parse Gemini response: {e}\nText: {text[:500]}")
+                    data = {
+                        "ai_response": text[:500] if text else "I need to reconsider this case.",
+                        "updated_differential": [],
+                        "suggested_test": None,
+                    }
+        
+        return data
+    
+    def _create_episode_summary(self, rounds: list[dict]) -> str:
+        """Create a summary of the last N debate rounds using Gemini.
+        
+        This is part of hierarchical summarization to keep prompt sizes
+        manageable for long debates (20+ rounds).
+        
+        Note: At round 5, previous_rounds contains only rounds 1-4 (4 items)
+        because the current round's response hasn't been added to debateRounds
+        yet (it's added AFTER the API returns). So we accept 4+ rounds.
+        
+        Args:
+            rounds: List of debate round dictionaries (4-5 rounds typical)
+            
+        Returns:
+            A concise summary of the episode
+        """
+        if len(rounds) < 4 or self.client is None:
+            return ""
+        
+        # Build context from the 5 rounds
+        episode_context = []
+        for i, r in enumerate(rounds, 1):
+            challenge = r.get("user_challenge", r.get("challenge", ""))
+            response = r.get("ai_response", r.get("response", ""))
+            episode_context.append(f"Round {i}:\nUser: {challenge[:100]}...\nAI: {response[:150]}...")
+        
+        summary_prompt = f"""Summarize this diagnostic debate episode ({len(rounds)} rounds) in 2-3 sentences.
+Focus on:
+- Key diagnostic insights gained
+- Major differential updates
+- Critical questions answered
+
+Debate Episode:
+{chr(10).join(episode_context)}
+
+Provide a concise summary:"""
+        
+        try:
+            summary_response = self.client.models.generate_content(
+                model=self._model_name,
+                contents=summary_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,
+                    max_output_tokens=200,
+                ),
+            )
+            summary = summary_response.text.strip()
+            logger.info(f"Created episode summary: {summary[:100]}...")
+            return summary
+        except Exception as e:
+            logger.error(f"Failed to create episode summary: {e}")
+            # Fallback: create a simple manual summary
+            return f"Debate rounds covered {len(rounds)} exchanges about differential diagnosis."
         
         # Fix double-wrapped JSON: if ai_response is itself a JSON string
         # containing the expected fields, unwrap it
