@@ -242,6 +242,9 @@ Before suggesting or implementing any new external tool, library, or API:
 - [x] **Comprehensive citation detection** — 15+ medical organizations (NCCN, AAD, ACR, ADA, AHA, ACC, CHEST, USPSTF, WHO, NICE, ASCO, ESMO) with smart deduplication
 - [x] **Citation test suite** — 26 passing tests for all guideline sources
 - [x] **Mobile UI polish** — Fixed text overflow in upload page, sidebar header spacing, touch-friendly interactions
+- [x] **Hallucination prevention** — Prompt guardrails + validation module + auto-retry on detected fabrications
+- [x] **Research attribution** — Added References section to README (CHECK, HALO, Guide-RAG, Mayo Reverse RAG)
+- [x] **Hallucination test suite** — 15 tests for detection module (133 total tests passing)
 
 ### Next Steps (Priority Order)
 
@@ -270,6 +273,8 @@ See `CHANGELOG.md` for all code changes.
 **Feb 13, 2026**: Multi-file upload — `page.tsx` rewritten from single `file` state to `imageFile` + `labFile` slots. `processFiles()` classifies by type, `Promise.all` runs image analysis + lab extraction in parallel. Drop zone shows both files with individual ✕ remove buttons. Added `_strip_refusal_preamble()` to strip "I am unable to... However..." prefix. Summary `max_new_tokens` bumped 2048→3072.
 
 **Feb 14, 2026**: Backend modularization + UI polish + test suite. Split monolithic `main.py` into focused modules (`models.py`, `json_utils.py`, `refusal.py`, `formatters.py`). Added comprehensive unit test suite (41 tests covering JSON parsing, refusal detection, formatters). Enhanced prompts with few-shot examples and Chain-of-Thought reasoning. Added input validation, suggested challenge chips, PDF export, mobile-responsive collapsible sidebar, and visual probability bars.
+
+**Feb 16, 2026**: Hallucination prevention system. New `hallucination_check.py` module detects fabricated lab values. Integrated validation into `/differential` and `/debate-turn` endpoints with auto-retry. Added prompt guardrails removing hardcoded example values (8.2 g/dL hemoglobin). Fixed frontend state reset on new case. Added academic references (CHECK, HALO, Guide-RAG, Mayo Reverse RAG). 133 tests passing.
 
 ---
 
