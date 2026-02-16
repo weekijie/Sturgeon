@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 
+// 2-minute timeout for debate turns (backend has 90s timeout + overhead)
+const DEBATE_TIMEOUT_MS = 120000;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -10,6 +13,7 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(DEBATE_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -30,6 +34,14 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
+    // Handle timeout specifically
+    if (error instanceof Error && error.name === "TimeoutError") {
+      console.error("Debate turn timeout after", DEBATE_TIMEOUT_MS, "ms");
+      return NextResponse.json(
+        { error: "Request timed out. The AI is processing a complex case. Please try again with a simpler query." },
+        { status: 504 }
+      );
+    }
     console.error("Debate turn API error:", error);
     return NextResponse.json(
       { error: "Failed to connect to AI service" },

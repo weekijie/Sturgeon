@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const TIMEOUT_MS = 90000; // 90 seconds for summary (can take longer)
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,10 +11,10 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
 
     if (!response.ok) {
-      // Parse backend error — FastAPI returns { detail: "..." }
       let detail = "Backend error";
       try {
         const errBody = await response.json();
@@ -30,6 +31,12 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      return NextResponse.json(
+        { error: "Request timed out. Please try again." },
+        { status: 504 }
+      );
+    }
     console.error("Summary API error:", error);
     return NextResponse.json(
       { error: "Failed to connect to AI service" },

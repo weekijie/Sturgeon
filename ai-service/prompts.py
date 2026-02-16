@@ -3,26 +3,6 @@ Prompt templates for MedGemma
 Note: All JSON example braces are doubled ({{ }}) to escape them for .format()
 """
 
-# --- RAG: Guideline Elicitation ---
-
-GUIDELINE_ELICITATION_PROMPT = """You are a diagnostic AI assistant with access to clinical guidelines.
-
-Before answering this medical question, recall relevant guidelines from:
-- IDSA (Infectious Disease Society of America)
-- CDC (Centers for Disease Control)
-- American Thoracic Society
-
-When citing guidelines in your response, use this EXACT format:
-"(IDSA Guidelines for Community-Acquired Pneumonia, 2023)" or
-"(CDC Legionella Guidelines, 2024)" or
-"(ATS/IDSA Guidelines for Severe CAP, 2022)"
-
-Always cite the specific guideline when making clinical recommendations.
-
-Question: {question}
-Clinical Context: {context}
-
-Provide your analysis with inline citations:"""
 
 SYSTEM_PROMPT = """You are a diagnostic team member in a clinical case discussion. Your role is to:
 1. Analyze clinical evidence carefully
@@ -74,30 +54,36 @@ Patient History:
 Lab Values:
 {formatted_lab_values}
 
+CRITICAL CONSTRAINTS:
+1. ONLY use lab values that are explicitly provided above. DO NOT fabricate or invent any lab values.
+2. If no lab values are provided, state "No lab data available" in your reasoning.
+3. Reference specific values ONLY if they appear in the Lab Values section above.
+4. If evidence is missing, suggest tests rather than assuming results.
+
 Before generating diagnoses, think step by step:
-1. What are the key abnormal findings?
+1. What are the key abnormal findings from the PROVIDED data only?
 2. What conditions could explain ALL of these findings together?
 3. What conditions explain only SOME findings (and which findings argue against them)?
 
 Then provide your differential in this EXACT JSON format. Keep evidence phrases SHORT (under 15 words each).
 Return ONLY valid JSON, no extra text.
 
-Example:
+Example format (use YOUR case findings, not these):
 {{
   "diagnoses": [
     {{
-      "name": "Iron Deficiency Anemia",
+      "name": "Diagnosis Name Here",
       "probability": "high",
-      "supporting_evidence": ["Low hemoglobin at 8.2 g/dL", "Low ferritin at 12 ng/mL", "Fatigue and pallor reported"],
-      "against_evidence": ["Normal MCV could suggest other type"],
-      "suggested_tests": ["Iron studies", "Reticulocyte count"]
+      "supporting_evidence": ["Finding from patient history", "Abnormal lab value if provided", "Symptom reported"],
+      "against_evidence": ["Counter-evidence from case if any"],
+      "suggested_tests": ["Test that would clarify diagnosis"]
     }},
     {{
-      "name": "Chronic Disease Anemia",
+      "name": "Alternative Diagnosis",
       "probability": "medium",
-      "supporting_evidence": ["Low hemoglobin with elevated CRP", "History of chronic inflammation"],
-      "against_evidence": ["Ferritin typically normal or elevated in ACD"],
-      "suggested_tests": ["TIBC", "Serum iron"]
+      "supporting_evidence": ["Supporting finding 1", "Supporting finding 2"],
+      "against_evidence": ["Why this is less likely"],
+      "suggested_tests": ["Recommended workup"]
     }}
   ]
 }}
@@ -124,9 +110,14 @@ Image Analysis (if available):
 The clinician challenges your thinking:
 "{user_challenge}"
 
+CRITICAL CONSTRAINTS:
+1. ONLY reference lab values, test results, or findings explicitly provided above.
+2. DO NOT fabricate or invent any clinical data or lab values.
+3. If evidence is missing, acknowledge the gap rather than assuming values.
+
 Respond by:
 1. Acknowledging the point if valid
-2. Defending your reasoning with evidence, or updating it
+2. Defending your reasoning with evidence from the case, or updating it
 3. Providing an updated differential if warranted
 4. Suggesting a test if it would help clarify
 
@@ -175,14 +166,18 @@ Image Analysis (if available):
 The clinician challenges your thinking:
 "{user_challenge}"
 
+CRITICAL CONSTRAINTS:
+1. ONLY reference lab values, test results, or findings explicitly provided in the case data above.
+2. DO NOT fabricate or invent any clinical data or lab values.
+3. If evidence is missing, acknowledge the gap rather than assuming values.
+4. You MUST cite the retrieved guidelines above when making clinical recommendations. Do not hallucinate citations - only use the guidelines provided in the [RETRIEVED CLINICAL GUIDELINES] section.
+
 Respond by:
 1. Acknowledging the point if valid
 2. Defending your reasoning with evidence from the case AND the retrieved guidelines above
 3. Citing specific guideline recommendations when making clinical points
 4. Providing an updated differential if warranted
 5. Suggesting a test if it would help clarify
-
-CRITICAL: You MUST cite the retrieved guidelines above when making clinical recommendations. Do not hallucinate citations - only use the guidelines provided in the [RETRIEVED CLINICAL GUIDELINES] section.
 
 When citing, use this format:
 "(IDSA Guidelines for Community-Acquired Pneumonia, 2019)" or
@@ -222,9 +217,14 @@ Final Differential:
 Debate History:
 {debate_rounds}
 
+CRITICAL CONSTRAINTS:
+1. ONLY reference lab values, test results, or clinical findings that were explicitly provided in the case data above.
+2. DO NOT fabricate or invent any clinical data, lab values, or test results.
+3. If data is missing, acknowledge the limitation rather than assuming values.
+
 Provide:
 1. The most likely diagnosis with confidence level
-2. The reasoning chain that led to this conclusion
+2. The reasoning chain that led to this conclusion (cite specific evidence from case)
 3. What was ruled out and why
 4. Recommended next steps
 
@@ -234,16 +234,24 @@ Also provide a confidence_percent (integer 0-100) based on:
 - Number of alternative diagnoses remaining
 - Whether confirmatory testing has been done
 
-Return as JSON:
+Example JSON format (use YOUR case findings, not these):
 {{
-  "final_diagnosis": "Diagnosis name",
-  "confidence": "high|medium|low",
-  "confidence_percent": 75,
-  "reasoning_chain": ["step 1", "step 2", "step 3"],
-  "ruled_out": ["diagnosis: reason"],
-  "next_steps": ["action 1", "action 2"]
+  "final_diagnosis": "Most Likely Diagnosis Based on Case",
+  "confidence": "high",
+  "confidence_percent": 85,
+  "reasoning_chain": [
+    "Finding 1 from patient history",
+    "Abnormal lab result if provided",
+    "Clinical feature supporting diagnosis"
+  ],
+  "ruled_out": [
+    "Alternative diagnosis: reason it was ruled out based on case evidence"
+  ],
+  "next_steps": [
+    "Recommended action based on diagnosis"
+  ]
 }}
 
+Return ONLY valid JSON matching the format above, no extra text.
+
 JSON Response:"""
-"""
-"""

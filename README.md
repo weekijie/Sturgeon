@@ -113,6 +113,15 @@ Sturgeon/
 | `/debate-turn`   | POST   | Handle a debate round (orchestrated)                                |
 | `/summary`       | POST   | Generate final diagnosis summary                                    |
 
+## References
+
+This project incorporates techniques from the following research:
+
+- **CHECK Framework**: Garcia-Fernandez et al. "Trustworthy AI for Medicine: Continuous Hallucination Detection and Elimination with CHECK." arXiv:2506.11129 (June 2025). — Post-generation validation, hallucination detection with structured databases.
+- **HALO Framework**: Anjum et al. "HALO: Hallucination Analysis and Learning Optimization to Empower LLMs with Retrieval-Augmented Context for Guided Clinical Decision Making." arXiv:2409.10011 (September 2024). — Multiple query variations, MMR scoring for context prioritization.
+- **Guide-RAG**: DiGiacomo et al. "Guide-RAG: Evidence-Driven Corpus Curation for Retrieval-Augmented Generation in Long COVID." arXiv:2510.15782 (October 2025). — Guidelines + systematic reviews corpus curation, faithfulness/relevance/comprehensiveness metrics.
+- **Mayo Reverse RAG**: Plumb, Taryn. "Mayo Clinic's secret weapon against AI hallucinations: Reverse RAG in action." VentureBeat (March 2025). — Verification-first approach with traceable citations.
+
 ## License
 
 [CC BY 4.0](LICENSE) - Creative Commons Attribution 4.0 International

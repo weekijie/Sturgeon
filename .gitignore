@@ -34,6 +34,8 @@ npm-debug.log*
 # Cache
 .cache/
 *.tsbuildinfo
+.chroma_cache/
+rag_audit.log
 
 # Python
 *.egg-info/

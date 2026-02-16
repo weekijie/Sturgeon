@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-02-16] Session 14 — Hallucination Prevention & Research Attribution
+
+### Backend
+
+#### Added
+- **Hallucination Detection Module** (`ai-service/hallucination_check.py`):
+  - Validates MedGemma outputs against user-provided data
+  - Detects fabricated lab values (e.g., hemoglobin 8.2 g/dL when not provided)
+  - Extracts numeric values with units from generated text
+  - Maps values to closest lab test name by position
+  - Functions: `check_hallucination()`, `validate_differential_response()`, `validate_debate_response()`
+  - 15 unit tests in `test_hallucination.py`
+
+#### Changed
+- **Prompt Guardrails** (`ai-service/prompts.py`):
+  - **DIFFERENTIAL_PROMPT**: Removed hardcoded example with specific lab values (8.2 g/dL hemoglobin, 12 ng/mL ferritin)
+  - Added CRITICAL CONSTRAINTS section: "ONLY use lab values explicitly provided above. DO NOT fabricate."
+  - Replaced specific example with generic template showing format only
+  - **SUMMARY_PROMPT**: Same guardrails added
+  - **DEBATE_TURN_PROMPT / DEBATE_TURN_PROMPT_WITH_RAG**: Added hallucination prevention constraints
+
+- **Integrated Hallucination Validation** (`ai-service/main.py`):
+  - `/differential` endpoint now validates response for fabricated lab values
+  - Auto-retry with correction constraints if hallucination detected
+  - `/debate-turn` MedGemma-only fallback also includes validation
+  - Logs warnings for debugging; corrected response returned to user
+
+### Frontend
+
+#### Changed
+- **State Reset on New Case** (`frontend/app/page.tsx`):
+  - Added `resetCase()` call at start of `handleAnalyze()`
+  - Prevents previous case's `labResults` and `imageAnalysis` from persisting
+  - Ensures clean state for each new analysis
+
+### Documentation
+
+#### Added
+- **References Section** (`README.md`):
+  - Academic attribution for research used in implementation
+  - CHECK Framework (arXiv:2506.11129) — hallucination detection
+  - HALO Framework (arXiv:2409.10011) — multiple query variations, MMR scoring
+  - Guide-RAG (arXiv:2510.15782) — corpus curation, evaluation metrics
+  - Mayo Reverse RAG (VentureBeat, March 2025) — verification-first approach
+
+### Tests
+- **133 tests passing** (118 existing + 15 new hallucination tests)
+
+---
+
 ## [2026-02-15] Session 13 — Comprehensive Citation Detection & Mobile Responsiveness
 
 ### Backend

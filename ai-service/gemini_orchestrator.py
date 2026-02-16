@@ -34,22 +34,37 @@ DEFAULT_TIMEOUT_SECONDS = 90.0
 # ---------------------------------------------------------------------------
 
 # Mapping of guideline citations to their URLs
-# These are specific guideline URLs - Phase B RAG uses these as fallbacks
+# Sub-entries for multi-guideline orgs point to specific pages
+# Generic fallback entries point to search/topics pages
+# NOTE: IDSA, BTS, SSC, SCCM removed from corpus (copyrighted) but URLs kept for external citations
 GUIDELINE_URLS: Dict[str, str] = {
-    # Infectious Disease
-    "IDSA": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
-    "CDC": "https://www.cdc.gov/legionella/hcp/clinical-guidance/index.html",
-    "ATS": "https://www.thoracic.org/practice-guidelines/",
-    "ATS/IDSA": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
-    # Pulmonary - UK
-    "BTS": "https://www.brit-thoracic.org.uk/document-library/guidelines/pneumonia-adults/quick-reference-guide-bts-guidelines-for-the-management-of-community-acquired-pneumonia-in-adults/",
-    # Critical Care / Sepsis
-    "SCCM": "https://www.sccm.org/survivingsepsiscampaign/guidelines-and-resources/surviving-sepsis-campaign-adult-guidelines",
-    "ESICM": "https://www.esicm.org/guidelines/",
-    "SSC": "https://www.sccm.org/survivingsepsiscampaign/guidelines-and-resources/surviving-sepsis-campaign-adult-guidelines",
-    # Medical Literature
+    # WHO - Specific guidelines (check these FIRST in elif chain)
+    "WHO_MENINGITIS": "https://www.who.int/publications/i/item/9789240108042",
+    "WHO_TB": "https://www.ncbi.nlm.nih.gov/books/NBK607290/",
+    "WHO_HEPATITIS_B": "https://www.who.int/publications/i/item/9789240090903",
+    "WHO": "https://www.who.int/publications/i/",  # Fallback: search page
+    # CDC - Specific guidelines
+    "CDC_SEPSIS": "https://www.cdc.gov/sepsis/hcp/core-elements/index.html",
+    "CDC_LEGIONELLA": "https://www.cdc.gov/legionella/hcp/clinical-guidance/index.html",
+    "CDC_RESPIRATORY": "https://www.cdc.gov/respiratory-viruses/guidance/index.html",
+    "CDC": "https://www.cdc.gov/",  # Fallback: homepage with search
+    # USPSTF - Specific guidelines
+    "USPSTF_BREAST": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/breast-cancer-screening",
+    "USPSTF_COLORECTAL": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/colorectal-cancer-screening",
+    "USPSTF_DIABETES": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/screening-for-prediabetes-and-type-2-diabetes",
+    "USPSTF_CARDIO": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/statin-use-in-adults-preventive-medication",
+    "USPSTF": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation-topics",  # Fallback
+    # PMC / PubMed
     "PMC": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7112285/",
     "PubMed": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7112285/",
+    # Copyrighted - NOT in RAG corpus (external reference only)
+    "IDSA": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+    "ATS": "https://www.thoracic.org/practice-guidelines/",
+    "ATS/IDSA": "https://www.idsociety.org/practice-guideline/community-acquired-pneumonia-cap-in-adults/",
+    "BTS": "https://www.brit-thoracic.org.uk/document-library/guidelines/pneumonia-adults/",
+    "SCCM": "https://www.sccm.org/survivingsepsiscampaign/guidelines-and-resources/",
+    "ESICM": "https://www.esicm.org/guidelines/",
+    "SSC": "https://www.sccm.org/survivingsepsiscampaign/guidelines-and-resources/",
     # Cancer / Oncology
     "NCCN": "https://www.nccn.org/guidelines/",
     "ASCO": "https://www.asco.org/practice-patients/guidelines",
@@ -68,10 +83,6 @@ GUIDELINE_URLS: Dict[str, str] = {
     "ACC/AHA": "https://professional.heart.org/guidelines-and-statements",
     # Pulmonary
     "CHEST": "https://www.chestnet.org/guidelines-and-research",
-    # Preventive Care
-    "USPSTF": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation-topics",
-    # Global Health
-    "WHO": "https://www.who.int/publications/guidelines",
     # UK Guidelines
     "NICE": "https://www.nice.org.uk/guidance",
 }
@@ -96,9 +107,51 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
     seen_spans = set()  # Track (start, end) positions to avoid duplicates
     
     # All medical organizations to detect - longer/specific ones first to avoid partial matches
-    # Added: BTS, SCCM, ESICM, PMC, SSC, PubMed for RAG guideline corpus
-    ORGS = r'USPSTF|SCCM|ESICM|CHEST|NCCN|ASCO|ESMO|AAD|ACR|ADA|AHA|ACC|IDSA|CDC|ATS|WHO|NICE|BTS|PMC|PubMed|SSC'
+    # IMPORTANT: Sub-entry patterns (WHO_MENINGITIS, etc.) must come BEFORE generic fallbacks (WHO)
+    ORGS = r'WHO_MENINGITIS|WHO_HEPATITIS_B|WHO_TB|CDC_LEGIONELLA|CDC_RESPIRATORY|CDC_SEPSIS|USPSTF_COLORECTAL|USPSTF_DIABETES|USPSTF_CARDIO|USPSTF_BREAST|USPSTF|SCCM|ESICM|CHEST|NCCN|ASCO|ESMO|AAD|ACR|ADA|AHA|ACC|IDSA|CDC|ATS|WHO|NICE|BTS|PMC|PubMed|SSC'
     COMBO_ORGS = r'ATS/IDSA|ACC/AHA|Surviving Sepsis Campaign'
+    
+    # Organization aliases - map alternative names to canonical names for URL lookup
+    # This handles cases where Gemini uses alternative phrasings like "Primary Care Clinics" instead of "PMC"
+    # IMPORTANT: Sub-entry aliases must be checked BEFORE generic fallback aliases
+    ORG_ALIASES = {
+        # WHO sub-entries (check these FIRST)
+        "WORLD HEALTH ORGANIZATION MENINGITIS": "WHO_MENINGITIS",
+        "WHO MENINGITIS": "WHO_MENINGITIS",
+        "WORLD HEALTH ORGANIZATION TB": "WHO_TB",
+        "WORLD HEALTH ORGANIZATION TUBERCULOSIS": "WHO_TB",
+        "WHO TB": "WHO_TB",
+        "WORLD HEALTH ORGANIZATION HEPATITIS B": "WHO_HEPATITIS_B",
+        "WHO HEPATITIS B": "WHO_HEPATITIS_B",
+        # CDC sub-entries
+        "CDC SEPSIS": "CDC_SEPSIS",
+        "CDC HOSPITAL SEPSIS": "CDC_SEPSIS",
+        "CDC LEGIONELLA": "CDC_LEGIONELLA",
+        "CDC RESPIRATORY": "CDC_RESPIRATORY",
+        "CDC RESPIRATORY VIRUS": "CDC_RESPIRATORY",
+        # USPSTF sub-entries
+        "US PREVENTIVE SERVICES TASK FORCE BREAST": "USPSTF_BREAST",
+        "USPSTF BREAST": "USPSTF_BREAST",
+        "USPSTF COLORECTAL": "USPSTF_COLORECTAL",
+        "USPSTF DIABETES": "USPSTF_DIABETES",
+        "USPSTF STATIN": "USPSTF_CARDIO",
+        "USPSTF CARDIOVASCULAR": "USPSTF_CARDIO",
+        # Generic fallbacks (check AFTER sub-entries)
+        "PRIMARY CARE CLINICS": "PMC",
+        "PUBMED CENTRAL": "PMC",
+        "BRITISH THORACIC SOCIETY": "BTS",
+        "INFECTIOUS DISEASES SOCIETY OF AMERICA": "IDSA",
+        "AMERICAN THORACIC SOCIETY": "ATS",
+        "CENTERS FOR DISEASE CONTROL": "CDC",
+        "CENTER FOR DISEASE CONTROL": "CDC",
+        "SURVIVING SEPSIS CAMPAIGN": "SSC",
+        "SOCIETY OF CRITICAL CARE MEDICINE": "SCCM",
+        "EUROPEAN SOCIETY OF INTENSIVE CARE MEDICINE": "ESICM",
+        "US PREVENTIVE SERVICES TASK FORCE": "USPSTF",
+        "U S PREVENTIVE SERVICES TASK FORCE": "USPSTF",
+        "PREVENTIVE SERVICES TASK FORCE": "USPSTF",
+        "WORLD HEALTH ORGANIZATION": "WHO",
+    }
     
     # Pattern 1: Full citations in parentheses with year
     # Matches: (IDSA Guidelines for Community-Acquired Pneumonia, 2023)
@@ -120,10 +173,20 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
     # Matches: (NCCN 2024) or (IDSA, 2023)
     simple_pattern = rf'\(({COMBO_ORGS}|{ORGS})[/,\s]+\d{{4}}\)'
     
+    # Pattern 4: Alternative organization names with year
+    # Matches: (Primary Care Clinics, 2020) or (British Thoracic Society, 2009)
+    # This catches citations using full organization names instead of acronyms
+    alias_names = "|".join(re.escape(alias) for alias in ORG_ALIASES.keys())
+    alias_pattern = rf'\((?:the\s+)?({alias_names})[^)]*?\d{{4}}[^)]*?\)'
+    
+    # Pattern 5: Attribution with alternative organization names
+    # Matches: "According to Primary Care Clinics (2020)" or "Per British Thoracic Society guidelines 2009"
+    attribution_alias_pattern = rf'(?:According to|Per|Based on|Following)\s+(?:the\s+)?({alias_names})[^,.]{{0,100}}?\d{{4}}'
+    
     # Find all matches with their positions
     all_matches = []
     
-    for pattern in [citation_pattern1, attribution_pattern, simple_pattern]:
+    for pattern in [citation_pattern1, attribution_pattern, simple_pattern, alias_pattern, attribution_alias_pattern]:
         for match in re.finditer(pattern, text, re.IGNORECASE):
             # Skip if this span overlaps with an already-found citation
             span = (match.start(), match.end())
@@ -144,88 +207,125 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
         source = "Unknown"
         url = ""
         
-        # Check for combined organizations first (ATS/IDSA, ACC/AHA, Surviving Sepsis Campaign)
-        if "ATS/IDSA" in citation_upper or ("ATS" in citation_upper and "IDSA" in citation_upper):
-            source = "ATS/IDSA"
-            url = GUIDELINE_URLS.get("ATS/IDSA", GUIDELINE_URLS.get("ATS", ""))
-        elif "ACC/AHA" in citation_upper or ("ACC" in citation_upper and "AHA" in citation_upper):
-            source = "ACC/AHA"
-            url = GUIDELINE_URLS.get("ACC/AHA", GUIDELINE_URLS.get("AHA", ""))
-        elif "SURVIVING SEPSIS CAMPAIGN" in citation_upper or "SSC" in citation_upper:
-            # Surviving Sepsis Campaign guidelines
-            source = "SSC"
-            url = GUIDELINE_URLS.get("SSC", "")
-        elif "SCCM" in citation_upper:
-            # Society of Critical Care Medicine
-            source = "SCCM"
-            url = GUIDELINE_URLS.get("SCCM", "")
-        elif "ESICM" in citation_upper:
-            # European Society of Intensive Care Medicine
-            source = "ESICM"
-            url = GUIDELINE_URLS.get("ESICM", "")
-        elif "BTS" in citation_upper:
-            # British Thoracic Society
-            source = "BTS"
-            url = GUIDELINE_URLS.get("BTS", "")
-        elif "PUBMED" in citation_upper or "PMC" in citation_upper:
-            # PubMed Central
-            source = "PMC"
-            url = GUIDELINE_URLS.get("PMC", "")
-        elif "ADA" in citation_upper and "AAD" in citation_upper:
-            # Disambiguate: AAD (dermatology) vs ADA (diabetes)
-            context_window = text[max(0, span[0] - 200):min(len(text), span[1] + 200)].upper()
-            if any(word in context_window for word in ["DERMATOLOGY", "SKIN", "MELANOMA", "PSORIASIS", "ECZEMA"]):
+        # Check organization aliases first (e.g., "Primary Care Clinics" -> PMC)
+        for alias, canonical in ORG_ALIASES.items():
+            if alias in citation_upper:
+                source = canonical
+                url = GUIDELINE_URLS.get(canonical, "")
+                break
+        
+        # If no alias matched, check for combined organizations and individual orgs
+        if source == "Unknown":
+            # Check for combined organizations first (ATS/IDSA, ACC/AHA, Surviving Sepsis Campaign)
+            if "ATS/IDSA" in citation_upper or ("ATS" in citation_upper and "IDSA" in citation_upper):
+                source = "ATS/IDSA"
+                url = GUIDELINE_URLS.get("ATS/IDSA", GUIDELINE_URLS.get("ATS", ""))
+            elif "ACC/AHA" in citation_upper or ("ACC" in citation_upper and "AHA" in citation_upper):
+                source = "ACC/AHA"
+                url = GUIDELINE_URLS.get("ACC/AHA", GUIDELINE_URLS.get("AHA", ""))
+            elif "SURVIVING SEPSIS CAMPAIGN" in citation_upper or "SSC" in citation_upper:
+                source = "SSC"
+                url = GUIDELINE_URLS.get("SSC", "")
+            elif "SCCM" in citation_upper:
+                source = "SCCM"
+                url = GUIDELINE_URLS.get("SCCM", "")
+            elif "ESICM" in citation_upper:
+                source = "ESICM"
+                url = GUIDELINE_URLS.get("ESICM", "")
+            elif "BTS" in citation_upper:
+                source = "BTS"
+                url = GUIDELINE_URLS.get("BTS", "")
+            elif "PUBMED" in citation_upper or "PMC" in citation_upper:
+                source = "PMC"
+                url = GUIDELINE_URLS.get("PMC", "")
+            elif "ADA" in citation_upper and "AAD" in citation_upper:
+                # Disambiguate: AAD (dermatology) vs ADA (diabetes)
+                context_window = text[max(0, span[0] - 200):min(len(text), span[1] + 200)].upper()
+                if any(word in context_window for word in ["DERMATOLOGY", "SKIN", "MELANOMA", "PSORIASIS", "ECZEMA"]):
+                    source = "AAD"
+                    url = GUIDELINE_URLS.get("AAD", "")
+                else:
+                    source = "ADA"
+                    url = GUIDELINE_URLS.get("ADA", "")
+            # WHO - check specific sub-entries BEFORE generic fallback
+            elif "WHO MENINGITIS" in citation_upper or "MENINGITIS" in citation_upper and "WHO" in citation_upper:
+                source = "WHO_MENINGITIS"
+                url = GUIDELINE_URLS.get("WHO_MENINGITIS", "")
+            elif "WHO TB" in citation_upper or "WHO TUBERCULOSIS" in citation_upper or ("TB" in citation_upper and "WHO" in citation_upper):
+                source = "WHO_TB"
+                url = GUIDELINE_URLS.get("WHO_TB", "")
+            elif "WHO HEPATITIS" in citation_upper or ("HEPATITIS" in citation_upper and "WHO" in citation_upper):
+                source = "WHO_HEPATITIS_B"
+                url = GUIDELINE_URLS.get("WHO_HEPATITIS_B", "")
+            # CDC - check specific sub-entries BEFORE generic fallback
+            elif "CDC SEPSIS" in citation_upper or "HOSPITAL SEPSIS" in citation_upper:
+                source = "CDC_SEPSIS"
+                url = GUIDELINE_URLS.get("CDC_SEPSIS", "")
+            elif "CDC LEGIONELLA" in citation_upper or "LEGIONELLA" in citation_upper:
+                source = "CDC_LEGIONELLA"
+                url = GUIDELINE_URLS.get("CDC_LEGIONELLA", "")
+            elif "CDC RESPIRATORY" in citation_upper or "RESPIRATORY VIRUS" in citation_upper:
+                source = "CDC_RESPIRATORY"
+                url = GUIDELINE_URLS.get("CDC_RESPIRATORY", "")
+            # USPSTF - check specific sub-entries BEFORE generic fallback
+            elif "USPSTF BREAST" in citation_upper or "BREAST CANCER SCREENING" in citation_upper:
+                source = "USPSTF_BREAST"
+                url = GUIDELINE_URLS.get("USPSTF_BREAST", "")
+            elif "USPSTF COLORECTAL" in citation_upper or "COLORECTAL CANCER" in citation_upper:
+                source = "USPSTF_COLORECTAL"
+                url = GUIDELINE_URLS.get("USPSTF_COLORECTAL", "")
+            elif "USPSTF DIABETES" in citation_upper or ("PREDIABETES" in citation_upper and "USPSTF" in citation_upper):
+                source = "USPSTF_DIABETES"
+                url = GUIDELINE_URLS.get("USPSTF_DIABETES", "")
+            elif "USPSTF STATIN" in citation_upper or "USPSTF CARDIOVASCULAR" in citation_upper:
+                source = "USPSTF_CARDIO"
+                url = GUIDELINE_URLS.get("USPSTF_CARDIO", "")
+            # Single organizations - check in order of specificity (longer acronyms first)
+            elif "USPSTF" in citation_upper:
+                source = "USPSTF"
+                url = GUIDELINE_URLS.get("USPSTF", "")
+            elif "NCCN" in citation_upper:
+                source = "NCCN"
+                url = GUIDELINE_URLS.get("NCCN", "")
+            elif "ASCO" in citation_upper:
+                source = "ASCO"
+                url = GUIDELINE_URLS.get("ASCO", "")
+            elif "ESMO" in citation_upper:
+                source = "ESMO"
+                url = GUIDELINE_URLS.get("ESMO", "")
+            elif "AAD" in citation_upper:
                 source = "AAD"
                 url = GUIDELINE_URLS.get("AAD", "")
-            else:
+            elif "ACR" in citation_upper:
+                source = "ACR"
+                url = GUIDELINE_URLS.get("ACR", "")
+            elif "ADA" in citation_upper:
                 source = "ADA"
                 url = GUIDELINE_URLS.get("ADA", "")
-        # Single organizations - check in order of specificity (longer acronyms first)
-        elif "USPSTF" in citation_upper:
-            source = "USPSTF"
-            url = GUIDELINE_URLS.get("USPSTF", "")
-        elif "NCCN" in citation_upper:
-            source = "NCCN"
-            url = GUIDELINE_URLS.get("NCCN", "")
-        elif "ASCO" in citation_upper:
-            source = "ASCO"
-            url = GUIDELINE_URLS.get("ASCO", "")
-        elif "ESMO" in citation_upper:
-            source = "ESMO"
-            url = GUIDELINE_URLS.get("ESMO", "")
-        elif "AAD" in citation_upper:
-            source = "AAD"
-            url = GUIDELINE_URLS.get("AAD", "")
-        elif "ACR" in citation_upper:
-            source = "ACR"
-            url = GUIDELINE_URLS.get("ACR", "")
-        elif "ADA" in citation_upper:
-            source = "ADA"
-            url = GUIDELINE_URLS.get("ADA", "")
-        elif "AHA" in citation_upper:
-            source = "AHA"
-            url = GUIDELINE_URLS.get("AHA", "")
-        elif "CHEST" in citation_upper:
-            source = "CHEST"
-            url = GUIDELINE_URLS.get("CHEST", "")
-        elif "WHO" in citation_upper:
-            source = "WHO"
-            url = GUIDELINE_URLS.get("WHO", "")
-        elif "NICE" in citation_upper:
-            source = "NICE"
-            url = GUIDELINE_URLS.get("NICE", "")
-        elif "IDSA" in citation_upper:
-            source = "IDSA"
-            url = GUIDELINE_URLS.get("IDSA", "")
-        elif "CDC" in citation_upper:
-            source = "CDC"
-            url = GUIDELINE_URLS.get("CDC", "")
-        elif "ACC" in citation_upper:
-            source = "ACC"
-            url = GUIDELINE_URLS.get("ACC", "")
-        elif "ATS" in citation_upper:
-            source = "ATS"
-            url = GUIDELINE_URLS.get("ATS", "")
+            elif "AHA" in citation_upper:
+                source = "AHA"
+                url = GUIDELINE_URLS.get("AHA", "")
+            elif "CHEST" in citation_upper:
+                source = "CHEST"
+                url = GUIDELINE_URLS.get("CHEST", "")
+            elif "WHO" in citation_upper:
+                source = "WHO"
+                url = GUIDELINE_URLS.get("WHO", "")
+            elif "NICE" in citation_upper:
+                source = "NICE"
+                url = GUIDELINE_URLS.get("NICE", "")
+            elif "IDSA" in citation_upper:
+                source = "IDSA"
+                url = GUIDELINE_URLS.get("IDSA", "")
+            elif "CDC" in citation_upper:
+                source = "CDC"
+                url = GUIDELINE_URLS.get("CDC", "")
+            elif "ACC" in citation_upper:
+                source = "ACC"
+                url = GUIDELINE_URLS.get("ACC", "")
+            elif "ATS" in citation_upper:
+                source = "ATS"
+                url = GUIDELINE_URLS.get("ATS", "")
         
         # Format citation text consistently
         formatted_text = citation_text
@@ -692,9 +792,22 @@ Respond with ONLY the question, nothing else."""
 RETRIEVED EVIDENCE-BASED GUIDELINES:
 {retrieved_context}
 
-You MUST cite ONLY the above retrieved guidelines when making clinical recommendations. Do not hallucinate citations for guidelines that were not retrieved. If no guidelines were retrieved, do not cite any.
+You MUST cite ONLY the above retrieved guidelines when making clinical recommendations. Do not hallucinate citations for guidelines that were not retrieved.
 """
-            citation_instruction = """3. Cite the retrieved guidelines using the EXACT format: "(Organization Title, Year)" — only cite guidelines that were actually provided above"""
+            citation_instruction = """3. Cite the retrieved guidelines using these EXACT formats (do not change the year):
+    - CDC Sepsis: "(CDC Hospital Sepsis Program Core Elements, 2025)"
+    - CDC Respiratory: "(CDC Respiratory Virus Guidance, 2025)"
+    - CDC Legionella: "(CDC Clinical Guidance for Legionella, 2025)"
+    - PMC pneumonia: "(PMC Guidelines for Pneumonia Evaluation, 2018)"
+    - USPSTF Breast Cancer: "(USPSTF Breast Cancer Screening Guidelines, 2024)"
+    - USPSTF Colorectal: "(USPSTF Colorectal Cancer Screening Guidelines, 2021)"
+    - USPSTF Diabetes: "(USPSTF Diabetes Screening Guidelines, 2021)"
+    - USPSTF Cardiovascular: "(USPSTF Statin Use Guidelines, 2022)"
+    - WHO Meningitis: "(WHO Meningitis Guidelines, 2025)"
+    - WHO TB: "(WHO TB Prevention Guidelines, 2024)"
+    - WHO Hepatitis B: "(WHO Hepatitis B Guidelines, 2024)"
+    
+    Only cite guidelines that are clinically relevant to your recommendation. If a retrieved guideline is not applicable to this case, do not cite it."""
         else:
             citation_instruction = """3. Do NOT cite any clinical guidelines — none were retrieved for this topic. Focus purely on clinical reasoning from MedGemma's analysis"""
         
@@ -774,62 +887,6 @@ CRITICAL: The "ai_response" field must be a plain conversational text string, NO
                         "suggested_test": None,
                     }
         
-        return data
-    
-    def _create_episode_summary(self, rounds: list[dict]) -> str:
-        """Create a summary of the last N debate rounds using Gemini.
-        
-        This is part of hierarchical summarization to keep prompt sizes
-        manageable for long debates (20+ rounds).
-        
-        Note: At round 5, previous_rounds contains only rounds 1-4 (4 items)
-        because the current round's response hasn't been added to debateRounds
-        yet (it's added AFTER the API returns). So we accept 4+ rounds.
-        
-        Args:
-            rounds: List of debate round dictionaries (4-5 rounds typical)
-            
-        Returns:
-            A concise summary of the episode
-        """
-        if len(rounds) < 4 or self.client is None:
-            return ""
-        
-        # Build context from the 5 rounds
-        episode_context = []
-        for i, r in enumerate(rounds, 1):
-            challenge = r.get("user_challenge", r.get("challenge", ""))
-            response = r.get("ai_response", r.get("response", ""))
-            episode_context.append(f"Round {i}:\nUser: {challenge[:100]}...\nAI: {response[:150]}...")
-        
-        summary_prompt = f"""Summarize this diagnostic debate episode ({len(rounds)} rounds) in 2-3 sentences.
-Focus on:
-- Key diagnostic insights gained
-- Major differential updates
-- Critical questions answered
-
-Debate Episode:
-{chr(10).join(episode_context)}
-
-Provide a concise summary:"""
-        
-        try:
-            summary_response = self.client.models.generate_content(
-                model=self._model_name,
-                contents=summary_prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.3,
-                    max_output_tokens=200,
-                ),
-            )
-            summary = summary_response.text.strip()
-            logger.info(f"Created episode summary: {summary[:100]}...")
-            return summary
-        except Exception as e:
-            logger.error(f"Failed to create episode summary: {e}")
-            # Fallback: create a simple manual summary
-            return f"Debate rounds covered {len(rounds)} exchanges about differential diagnosis."
-        
         # Fix double-wrapped JSON: if ai_response is itself a JSON string
         # containing the expected fields, unwrap it
         ai_response = data.get("ai_response", "")
@@ -867,6 +924,60 @@ Provide a concise summary:"""
                 data["ai_response"] = prefix_match.group(1).rstrip('"}')
         
         return data
+    
+    def _create_episode_summary(self, rounds: list[dict]) -> str:
+        """Create a summary of the last N debate rounds using Gemini.
+        
+        This is part of hierarchical summarization to keep prompt sizes
+        manageable for long debates (20+ rounds).
+        
+        Note: At round 5, previous_rounds contains only rounds 1-4 (4 items)
+        because the current round's response hasn't been added to debateRounds
+        yet (it's added AFTER the API returns). So we accept 4+ rounds.
+        
+        Args:
+            rounds: List of debate round dictionaries (4-5 rounds typical)
+            
+        Returns:
+            A concise summary of the episode
+        """
+        if len(rounds) < 4 or self.client is None:
+            return ""
+        
+        # Build context from the rounds
+        episode_context = []
+        for i, r in enumerate(rounds, 1):
+            challenge = r.get("user_challenge", r.get("challenge", ""))
+            response = r.get("ai_response", r.get("response", ""))
+            episode_context.append(f"Round {i}:\nUser: {challenge[:100]}...\nAI: {response[:150]}...")
+        
+        summary_prompt = f"""Summarize this diagnostic debate episode ({len(rounds)} rounds) in 2-3 sentences.
+Focus on:
+- Key diagnostic insights gained
+- Major differential updates
+- Critical questions answered
+
+Debate Episode:
+{chr(10).join(episode_context)}
+
+Provide a concise summary:"""
+        
+        try:
+            summary_response = self.client.models.generate_content(
+                model=self._model_name,
+                contents=summary_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,
+                    max_output_tokens=200,
+                ),
+            )
+            summary = summary_response.text.strip()
+            logger.info(f"Created episode summary: {summary[:100]}...")
+            return summary
+        except Exception as e:
+            logger.error(f"Failed to create episode summary: {e}")
+            # Fallback: create a simple manual summary
+            return f"Debate rounds covered {len(rounds)} exchanges about differential diagnosis."
 
 
 # ---------------------------------------------------------------------------

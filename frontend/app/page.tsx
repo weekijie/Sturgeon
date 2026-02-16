@@ -74,6 +74,7 @@ export default function UploadPage() {
     setDifferential,
     setImageAnalysis,
     setLabResults,
+    resetCase,
   } = useCase();
 
   // Multi-file state: separate slots for image and lab report
@@ -152,6 +153,8 @@ export default function UploadPage() {
   }, [clearImage, clearLab]);
 
   const handleAnalyze = async () => {
+    resetCase();
+
     // 1A: Input validation — require at least some evidence
     if (!imageFile && !labFile && !patientHistory.trim()) {
       setError("Please provide at least a patient history or upload evidence (image or lab report) before analyzing.");

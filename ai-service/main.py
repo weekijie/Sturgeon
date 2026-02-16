@@ -39,6 +39,7 @@ try:
     from refusal import is_pure_refusal, strip_refusal_preamble
     from formatters import format_lab_values, format_differential, format_rounds
     from rag_retriever import get_retriever, GuidelineRetriever
+    from hallucination_check import validate_differential_response, validate_debate_response
 except ImportError:
     from .medgemma import get_model
     from .medsiglip import get_siglip
@@ -54,6 +55,7 @@ except ImportError:
     from .refusal import is_pure_refusal, strip_refusal_preamble
     from .formatters import format_lab_values, format_differential, format_rounds
     from .rag_retriever import get_retriever, GuidelineRetriever
+    from .hallucination_check import validate_differential_response, validate_debate_response
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -313,7 +315,7 @@ async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
 
 @app.post("/differential", response_model=DifferentialResponse)
 async def generate_differential(request: DifferentialRequest):
-    """Generate initial differential diagnoses."""
+    """Generate initial differential diagnoses with hallucination validation."""
     logger.info("Generating differential for patient history")
     
     try:
@@ -331,6 +333,44 @@ async def generate_differential(request: DifferentialRequest):
         
         data = extract_json(response)
         
+        # Validate for hallucinations
+        validation = validate_differential_response(
+            data,
+            request.lab_values,
+            request.patient_history
+        )
+        
+        if validation["has_hallucination"]:
+            logger.warning(f"[differential] Hallucination detected: {validation['warnings']}")
+            
+            # Re-prompt with explicit correction instruction
+            correction_prompt = f"""{prompt}
+
+IMPORTANT CORRECTION: Your previous response contained fabricated lab values that were NOT provided by the user.
+The following values were hallucinated and must NOT be included:
+{chr(10).join(f'- {w}' for w in validation['warnings'])}
+
+ONLY use data explicitly provided in the Patient History and Lab Values sections above.
+If a lab value is not provided, do NOT invent one.
+
+JSON Response:"""
+            
+            logger.info("[differential] Re-prompting with correction constraints...")
+            response = model.generate(correction_prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=3072, temperature=0.2)
+            t2 = time.time()
+            logger.info(f"[differential] retry_medgemma={t2-t1:.2f}s")
+            
+            data = extract_json(response)
+            
+            # Re-validate the corrected response
+            validation2 = validate_differential_response(
+                data,
+                request.lab_values,
+                request.patient_history
+            )
+            if validation2["has_hallucination"]:
+                logger.warning(f"[differential] Hallucination still present after retry: {validation2['warnings']}")
+        
         diagnoses = []
         for dx in data.get("diagnoses", []):
             diagnoses.append(Diagnosis(
@@ -341,8 +381,8 @@ async def generate_differential(request: DifferentialRequest):
                 suggested_tests=dx.get("suggested_tests", [])
             ))
         
-        t2 = time.time()
-        logger.info(f"[differential] total={t2-t0:.2f}s diagnoses={len(diagnoses)}")
+        t_final = time.time()
+        logger.info(f"[differential] total={t_final-t0:.2f}s diagnoses={len(diagnoses)}")
         return DifferentialResponse(diagnoses=diagnoses)
     except HTTPException:
         raise
@@ -478,11 +518,13 @@ async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnRe
         
         # Start RAG retrieval in parallel with prompt formatting
         rag_task = None
+        RAG_DISTANCE_THRESHOLD = 1.3  # Same threshold as orchestrated path
         if _rag_available:
             async def fetch_rag_context():
                 try:
                     retriever = get_retriever()
-                    rag_query = f"{request.user_challenge} pneumonia sepsis severity assessment treatment"
+                    # Use raw user challenge — no hardcoded fallback keywords
+                    rag_query = request.user_challenge
                     chunks, rag_error = await asyncio.to_thread(
                         retriever.retrieve,
                         query=rag_query,
@@ -490,7 +532,14 @@ async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnRe
                         top_k=3
                     )
                     if not rag_error and chunks:
-                        return retriever.format_retrieved_context(chunks)
+                        # Filter by distance threshold — same as orchestrated path
+                        relevant_chunks = [c for c in chunks if c.distance <= RAG_DISTANCE_THRESHOLD]
+                        if relevant_chunks:
+                            logger.info(f"[RAG fallback] {len(relevant_chunks)}/{len(chunks)} chunks passed threshold")
+                            return retriever.format_retrieved_context(relevant_chunks)
+                        else:
+                            logger.info(f"[RAG fallback] All chunks below relevance threshold (closest: {chunks[0].distance:.3f})")
+                            return ""
                     return ""
                 except Exception as e:
                     logger.warning(f"[RAG fallback] Retrieval failed: {e}")
@@ -550,6 +599,34 @@ async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnRe
         logger.info(f"[debate-turn] medgemma_only={t1-t0:.2f}s")
         
         data = extract_json(response)
+        
+        # Validate for hallucinations
+        validation = validate_debate_response(
+            data,
+            request.lab_values,
+            request.patient_history
+        )
+        
+        if validation["has_hallucination"]:
+            logger.warning(f"[debate-turn fallback] Hallucination detected: {validation['warnings']}")
+            
+            # Re-prompt with correction
+            correction_instruction = f"""
+
+IMPORTANT: Your previous response contained fabricated lab values NOT provided by the user.
+Only use data from the Patient History and Lab Values sections above.
+If a lab value was not provided, do NOT invent one.
+
+Return corrected JSON:"""
+            
+            correction_prompt = prompt + correction_instruction
+            logger.info("[debate-turn fallback] Re-prompting with correction...")
+            response = await asyncio.to_thread(
+                model.generate, correction_prompt,
+                max_new_tokens=2048,
+                system_prompt=SYSTEM_PROMPT,
+            )
+            data = extract_json(response)
         
         # Parse updated differential with robust field name handling
         diagnoses = _parse_differential(data.get("updated_differential", []))

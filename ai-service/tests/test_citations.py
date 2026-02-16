@@ -26,14 +26,14 @@ class TestCitationExtraction:
         assert citations[0]["url"] == GUIDELINE_URLS["IDSA"]
     
     def test_cdc_citation(self):
-        """Test CDC (Centers for Disease Control) citations."""
+        """Test CDC Legionella citation maps to CDC_LEGIONELLA sub-entry."""
         text = "(CDC Legionella Guidelines, 2024) recommend specific testing protocols."
         _, citations = extract_citations(text)
         
         assert len(citations) == 1
-        assert citations[0]["source"] == "CDC"
+        assert citations[0]["source"] == "CDC_LEGIONELLA"
         assert "CDC" in citations[0]["text"]
-        assert citations[0]["url"] == GUIDELINE_URLS["CDC"]
+        assert citations[0]["url"] == GUIDELINE_URLS["CDC_LEGIONELLA"]
     
     def test_ats_citation(self):
         """Test ATS (American Thoracic Society) citations."""
@@ -282,13 +282,15 @@ class TestCitationExtraction:
         
         Bug: "According to the CDC..." when uppercased becomes "ACCORDING TO THE CDC..."
         which contains "ACC" as substring. Fix: check CDC before ACC in elif chain.
+        
+        Note: This text contains "Legionella" so it maps to CDC_LEGIONELLA sub-entry.
         """
         text = "According to the CDC Clinical Guidance for Legionella (2025), testing is indicated."
         _, citations = extract_citations(text)
         
         assert len(citations) == 1
-        assert citations[0]["source"] == "CDC", f"Expected CDC, got {citations[0]['source']}"
-        assert citations[0]["url"] == GUIDELINE_URLS["CDC"], f"Wrong URL: {citations[0]['url']}"
+        assert citations[0]["source"] == "CDC_LEGIONELLA", f"Expected CDC_LEGIONELLA, got {citations[0]['source']}"
+        assert citations[0]["url"] == GUIDELINE_URLS["CDC_LEGIONELLA"], f"Wrong URL: {citations[0]['url']}"
     
     def test_according_to_duplicate_dedup(self):
         """REGRESSION: 'According to PMC...' and '(PMC...)' should deduplicate.
@@ -303,6 +305,102 @@ class TestCitationExtraction:
         # Should have only 1 unique citation (same source + year)
         assert len(citations) == 1, f"Expected 1 citation, got {len(citations)}: {citations}"
         assert citations[0]["source"] == "PMC"
+    
+    def test_primary_care_clinics_alias(self):
+        """REGRESSION: 'Primary Care Clinics, 2020' should map to PMC.
+        
+        Bug: Gemini generated '(Primary Care Clinics, 2020)' which wasn't detected
+        because the ORGS regex only had 'PMC'. Fix: added ORG_ALIASES dict to map
+        alternative names to canonical names, and alias regex patterns.
+        """
+        text = "According to (Primary Care Clinics, 2020), severity assessment is required."
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1, f"Expected 1 citation, got {len(citations)}: {citations}"
+        assert citations[0]["source"] == "PMC", f"Expected PMC, got {citations[0]['source']}"
+        assert citations[0]["url"] == GUIDELINE_URLS["PMC"]
+    
+    def test_british_thoracic_society_alias(self):
+        """Test that 'British Thoracic Society' maps to BTS."""
+        text = "(British Thoracic Society CAP Guidelines, 2009) recommend antibiotics."
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "BTS"
+        assert citations[0]["url"] == GUIDELINE_URLS["BTS"]
+    
+    def test_uspstf_breast_sub_entry(self):
+        """Test that 'USPSTF Breast Cancer' maps to USPSTF_BREAST sub-entry."""
+        text = "(USPSTF Breast Cancer Screening Guidelines, 2024)"
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "USPSTF_BREAST"
+        assert citations[0]["url"] == GUIDELINE_URLS["USPSTF_BREAST"]
+    
+    def test_uspstf_diabetes_sub_entry(self):
+        """Test that 'USPSTF Diabetes' maps to USPSTF_DIABETES sub-entry."""
+        text = "(USPSTF Diabetes Screening Guidelines, 2021)"
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "USPSTF_DIABETES"
+        assert citations[0]["url"] == GUIDELINE_URLS["USPSTF_DIABETES"]
+    
+    def test_who_meningitis_sub_entry(self):
+        """Test that 'WHO Meningitis' maps to WHO_MENINGITIS sub-entry."""
+        text = "(WHO Meningitis Guidelines, 2025)"
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "WHO_MENINGITIS"
+        assert citations[0]["url"] == GUIDELINE_URLS["WHO_MENINGITIS"]
+    
+    def test_who_tb_sub_entry(self):
+        """Test that 'WHO TB' maps to WHO_TB sub-entry."""
+        text = "(WHO TB Prevention Guidelines, 2024)"
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "WHO_TB"
+        assert citations[0]["url"] == GUIDELINE_URLS["WHO_TB"]
+    
+    def test_who_hepatitis_b_sub_entry(self):
+        """Test that 'WHO Hepatitis B' maps to WHO_HEPATITIS_B sub-entry."""
+        text = "(WHO Hepatitis B Guidelines, 2024)"
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "WHO_HEPATITIS_B"
+        assert citations[0]["url"] == GUIDELINE_URLS["WHO_HEPATITIS_B"]
+    
+    def test_cdc_sepsis_sub_entry(self):
+        """Test that 'CDC Sepsis' maps to CDC_SEPSIS sub-entry."""
+        text = "(CDC Hospital Sepsis Program Core Elements, 2025)"
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "CDC_SEPSIS"
+        assert citations[0]["url"] == GUIDELINE_URLS["CDC_SEPSIS"]
+    
+    def test_cdc_respiratory_sub_entry(self):
+        """Test that 'CDC Respiratory' maps to CDC_RESPIRATORY sub-entry."""
+        text = "(CDC Respiratory Virus Guidance, 2025)"
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "CDC_RESPIRATORY"
+        assert citations[0]["url"] == GUIDELINE_URLS["CDC_RESPIRATORY"]
+    
+    def test_who_fallback(self):
+        """Test that generic 'WHO' citation falls back to WHO search page."""
+        text = "(WHO Guidelines, 2024)"
+        _, citations = extract_citations(text)
+        
+        assert len(citations) == 1
+        assert citations[0]["source"] == "WHO"
+        assert citations[0]["url"] == GUIDELINE_URLS["WHO"]
+        assert "publications/i/" in citations[0]["url"]
 
 
 class TestGuidelineUrls:
@@ -311,11 +409,18 @@ class TestGuidelineUrls:
     def test_all_orgs_have_urls(self):
         """Verify all supported organizations have URL mappings."""
         expected_orgs = [
-            "IDSA", "CDC", "ATS", "ATS/IDSA",
+            # WHO sub-entries
+            "WHO_MENINGITIS", "WHO_TB", "WHO_HEPATITIS_B", "WHO",
+            # CDC sub-entries
+            "CDC_SEPSIS", "CDC_LEGIONELLA", "CDC_RESPIRATORY", "CDC",
+            # USPSTF sub-entries
+            "USPSTF_BREAST", "USPSTF_COLORECTAL", "USPSTF_DIABETES", "USPSTF_CARDIO", "USPSTF",
+            # Other orgs
+            "IDSA", "ATS", "ATS/IDSA",
             "NCCN", "ASCO", "ESMO",
             "AAD", "ACR", "ADA", "AHA", "ACC", "ACC/AHA",
-            "CHEST", "USPSTF", "WHO", "NICE",
-            # New organizations for RAG guideline corpus
+            "CHEST", "NICE",
+            # Copyrighted - still in URL dict for external reference
             "BTS", "SCCM", "ESICM", "SSC", "PMC"
         ]
         

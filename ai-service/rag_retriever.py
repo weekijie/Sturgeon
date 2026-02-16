@@ -29,6 +29,7 @@ if not hasattr(torch.distributed, 'is_initialized'):
 # Optional imports - graceful degradation if not available
 try:
     import chromadb
+    from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
     CHROMADB_AVAILABLE = True
 except ImportError:
     CHROMADB_AVAILABLE = False
@@ -280,7 +281,7 @@ class GuidelineRetriever:
     
     # Default chunking parameters
     CHUNK_SIZE = 1200
-    CHUNK_OVERLAP = 600
+    CHUNK_OVERLAP = 300  # 25% overlap (was 600/50% — excessive for small corpus)
     TOP_K_DEFAULT = 5
     
     # Embedding model (lightweight, CPU-only)
@@ -314,8 +315,8 @@ class GuidelineRetriever:
         self.rate_limiter = RateLimiter(rate_limit_requests, rate_limit_window)
         self.audit_logger = AuditLogger(audit_log_file)
         
-        # Initialize embedding model and vector DB
-        self.embedding_model = None
+        # Initialize ChromaDB components
+        self.embedding_function = None  # Set during initialize()
         self.chroma_client = None
         self.collection = None
         self._initialized = False
@@ -348,20 +349,34 @@ class GuidelineRetriever:
             return False
         
         try:
-            # Load embedding model
+            # Create embedding function for ChromaDB (shared between indexing and querying)
+            # This ensures the same model is used for both, preventing silent mismatches
             logger.info(f"Loading embedding model: {self.EMBEDDING_MODEL}")
-            self.embedding_model = SentenceTransformer(self.EMBEDDING_MODEL)
+            self.embedding_function = SentenceTransformerEmbeddingFunction(
+                model_name=self.EMBEDDING_MODEL
+            )
             
             # Initialize ChromaDB with persistent client (new API)
             self.chroma_client = chromadb.PersistentClient(path=str(self.cache_dir))
             
             # Check if collection exists and is valid
+            # Note: PersistentClient creates the cache_dir immediately, so we can't rely on
+            # directory existence alone. We need to try getting the collection and catch
+            # ValueError if it doesn't exist.
             cache_exists = self.cache_dir.exists() and any(self.cache_dir.iterdir())
             
             if cache_exists and not force_reindex:
-                logger.info("Loading existing vector index...")
-                self.collection = self.chroma_client.get_collection(name="guidelines")
-                self._load_stats_from_cache()
+                try:
+                    logger.info("Loading existing vector index...")
+                    self.collection = self.chroma_client.get_collection(
+                        name="guidelines",
+                        embedding_function=self.embedding_function
+                    )
+                    self._load_stats_from_cache()
+                except (ValueError, Exception) as e:
+                    # Collection doesn't exist in cache (e.g., cache dir recreated by PersistentClient)
+                    logger.info(f"Collection not found in cache, creating new index...")
+                    self._create_index()
             else:
                 logger.info("Creating new vector index...")
                 self._create_index()
@@ -382,7 +397,10 @@ class GuidelineRetriever:
         except:
             pass
         
-        self.collection = self.chroma_client.create_collection(name="guidelines")
+        self.collection = self.chroma_client.create_collection(
+            name="guidelines",
+            embedding_function=self.embedding_function
+        )
         
         # Load and chunk guidelines
         documents = []
