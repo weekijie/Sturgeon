@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useCase } from "../context/CaseContext";
 import Prose from "../../components/Prose";
+import { RateLimitStatus, parseRateLimitHeaders, isRateLimitError } from "../../components/RateLimitUI";
 
 interface SummaryData {
   final_diagnosis: string;
@@ -22,6 +23,8 @@ export default function SummaryPage() {
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rateLimitInfo, setRateLimitInfo] = useState<{ limit: number; remaining: number; window: number; retryAfter?: number } | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
 
   // Fire once on mount — useRef guard prevents double-fire (React Strict Mode / caseData ref changes)
   const didFetch = useRef(false);
@@ -49,6 +52,10 @@ export default function SummaryPage() {
           }),
         });
 
+        // Capture rate limit info from headers
+        const rateInfo = parseRateLimitHeaders(response.headers);
+        if (rateInfo) setRateLimitInfo(rateInfo);
+
         if (!response.ok) {
           // Read actual error from backend
           let errorDetail = "Failed to generate summary";
@@ -57,6 +64,9 @@ export default function SummaryPage() {
             errorDetail = errBody.detail || errBody.error || errBody.message || errorDetail;
           } catch {
             // Response body wasn't JSON
+          }
+          if (isRateLimitError(response)) {
+            setIsRateLimited(true);
           }
           throw new Error(errorDetail);
         }
@@ -116,13 +126,18 @@ export default function SummaryPage() {
   if (error || !summary) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6 bg-white">
-        <Card className="p-6 max-w-md text-center bg-white border border-border shadow-sm">
-          <h2 className="text-xl font-bold text-danger mb-4">Error</h2>
-          <p className="text-muted mb-4">{error || "Unable to generate summary"}</p>
-          <Button variant="solid" onPress={handleNewCase} className="bg-teal text-white hover:bg-teal/90">
-            Start New Case
-          </Button>
-        </Card>
+        <div className="max-w-md w-full space-y-4">
+          {(rateLimitInfo || isRateLimited) && (
+            <RateLimitStatus rateLimitInfo={rateLimitInfo} isRateLimited={isRateLimited} />
+          )}
+          <Card className="p-6 text-center bg-white border border-border shadow-sm">
+            <h2 className="text-xl font-bold text-danger mb-4">Error</h2>
+            <p className="text-muted mb-4">{error || "Unable to generate summary"}</p>
+            <Button variant="solid" onPress={handleNewCase} className="bg-teal text-white hover:bg-teal/90">
+              Start New Case
+            </Button>
+          </Card>
+        </div>
       </main>
     );
   }

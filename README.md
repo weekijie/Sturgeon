@@ -1,129 +1,446 @@
-# Sturgeon
+<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
+<a id="readme-top"></a>
 
-> Diagnostic Debate AI - House MD-style clinical reasoning
+<!-- PROJECT SHIELDS -->
+[![Contributors][contributors-shield]][contributors-url]
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+[![License][license-shield]][license-url]
 
-A web application that helps clinicians reduce diagnostic errors through structured AI-assisted debate. Users upload medical evidence, AI generates differential diagnoses, users challenge the AI's reasoning, and together they iterate toward a diagnosis.
 
-Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/medgemma-impact-challenge) hackathon.
 
-**Target**: Main Track + Agentic Workflow Prize
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+  <a href="https://github.com/weekijie/Sturgeon">
+    <img src="frontend/public/sturgeon-logo.svg" alt="Logo" width="80" height="80">
+  </a>
 
-## Architecture
+<h3 align="center">Sturgeon</h3>
 
-Sturgeon uses an **agentic dual-model architecture**:
+  <p align="center">
+    Clinical Debate AI for Differential Diagnosis
+    <br />
+    <em>Like House MD's diagnostic team, but AI-powered</em>
+    <br />
+    <br />
+    <a href="https://github.com/weekijie/Sturgeon/blob/main/STURGEON_PROJECT_PLAN.md"><strong>Explore the docs »</strong></a>
+    <br />
+    <br />
+    <a href="#usage">View Demo</a>
+    &middot;
+    <a href="https://github.com/weekijie/Sturgeon/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+    &middot;
+    <a href="https://github.com/weekijie/Sturgeon/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+  </p>
+</div>
 
-- **MedGemma 1.5 4B-it** (HAI-DEF model) = Medical Specialist. Handles all clinical reasoning, differential diagnosis, medical image analysis, and evidence evaluation as a callable tool.
-- **Gemini 3 Flash** = Orchestrator. Manages multi-turn conversation context, summarizes debate state, formulates focused questions for MedGemma, and synthesizes responses.
 
-This maps directly to the Agentic Workflow Prize: _"deploying HAI-DEF models as intelligent agents or callable tools."_
 
-```
-User challenge
-  -> Gemini: formulate focused question for MedGemma
-    -> MedGemma: clinical reasoning (single-turn)
-  -> Gemini: synthesize into response + updated differential
-<- Response with updated diagnoses
-```
+<!-- TABLE OF CONTENTS -->
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#key-features">Key Features</a></li>
+        <li><a href="#built-with">Built With</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#installation">Installation</a></li>
+        <li><a href="#configuration">Configuration</a></li>
+      </ul>
+    </li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#api-reference">API Reference</a></li>
+    <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#research--references">Research & References</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#acknowledgments">Acknowledgments</a></li>
+  </ol>
+</details>
 
-## Tech Stack
 
-| Layer        | Technology                                                 |
-| ------------ | ---------------------------------------------------------- |
-| Frontend     | Next.js 14 (App Router) + HeroUI v3                        |
-| Backend      | Python FastAPI                                             |
-| Medical AI   | MedGemma 1.5 4B-it (bfloat16, AutoModelForImageTextToText) |
-| Orchestrator | Gemini 3 Flash Preview (Google AI API)                     |
-| Hosting      | Vercel (frontend) + local/Kaggle (AI)                      |
 
-## Quick Start
+<!-- ABOUT THE PROJECT -->
+## About The Project
+
+[![Sturgeon Screenshot][product-screenshot]](https://github.com/weekijie/Sturgeon)
+
+**Sturgeon** is a Clinical Debate AI that brings House MD-style differential diagnosis to solo practitioners and resource-constrained settings. When you don't have a diagnostic team to challenge your thinking, Sturgeon acts as your AI colleague—generating differentials, defending its reasoning, and adapting when you challenge its conclusions.
+
+### The Problem
+
+Medical diagnosis is hard, especially when working alone:
+- **Cognitive bias** - Confirmation bias leads to missed diagnoses
+- **No second opinion** - Solo practitioners lack diagnostic teams
+- **Information overload** - Too many possible conditions, too little time
+- **Diagnostic errors** - Leading cause of medical mistakes and patient harm
+
+### The Solution
+
+Sturgeon simulates a **diagnostic case conference** using AI:
+
+1. **Upload evidence** - Medical images, lab reports, patient history
+2. **Get differential** - AI generates ranked diagnoses with reasoning
+3. **Challenge the AI** - Question its conclusions, suggest alternatives
+4. **Refine together** - AI updates its differential based on your input
+5. **Reach consensus** - Final diagnosis with full reasoning chain
+
+Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/medgemma-impact-challenge) - targeting the Main Track + Agentic Workflow Prize.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+### Key Features
+
+- **🧠 Agentic Dual-Model Architecture** - Gemini orchestrator + MedGemma specialist
+- **📊 Multi-Modal Analysis** - Process medical images + lab reports simultaneously  
+- **🔍 RAG-Enhanced Reasoning** - Clinical guidelines with automatic citation extraction
+- **🛡️ Hallucination Prevention** - Auto-validation with retry on detected fabrications
+- **⚡ Smart Rate Limiting** - Per-endpoint quota management with visual feedback
+- **💾 Session Persistence** - Cases saved locally, resume anytime
+- **📱 Mobile Responsive** - Full functionality on any device
+- **🎯 MedSigLIP Triage** - Fast image classification before deep analysis
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+### Built With
+
+* [![Next][Next.js]][Next-url]
+* [![React][React.js]][React-url]
+* [![TypeScript][TypeScript]][TypeScript-url]
+* [![Python][Python]][Python-url]
+* [![FastAPI][FastAPI]][FastAPI-url]
+* [![PyTorch][PyTorch]][PyTorch-url]
+* [![Tailwind][Tailwind]][Tailwind-url]
+* [![HeroUI][HeroUI]][HeroUI-url]
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- GETTING STARTED -->
+## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
-- Python 3.10+
-- CUDA-compatible GPU (16GB+ VRAM) or AMD GPU with ROCm
-- [MedGemma access on HuggingFace](https://huggingface.co/google/medgemma-1.5-4b-it)
-- [Gemini API key](https://aistudio.google.com/apikey) (optional -- falls back to MedGemma-only mode)
+- **Node.js** 18+ 
+- **Python** 3.10+
+- **GPU** with 16GB+ VRAM (NVIDIA CUDA or AMD ROCm)
+- **MedGemma Access** - [Request on HuggingFace](https://huggingface.co/google/medgemma-1.5-4b-it)
+- **Gemini API Key** (optional) - [Get free key](https://aistudio.google.com/apikey)
 
-### Frontend
+### Installation
+
+#### 1. Clone the repository
+
+```bash
+git clone https://github.com/weekijie/Sturgeon.git
+cd Sturgeon
+```
+
+#### 2. Set up Python backend
+
+```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate (Windows)
+.venv\Scripts\activate
+
+# Activate (Linux/Mac)
+# source .venv/bin/activate
+
+# Install dependencies
+pip install -r ai-service/requirements.txt
+```
+
+#### 3. Set up frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev
-# Opens http://localhost:3000
+cd ..
 ```
 
-### AI Service
+### Configuration
+
+#### 1. Environment Variables
 
 ```bash
-# Create and activate virtual environment
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # Linux/Mac
-
-# Install dependencies
-pip install -r ai-service/requirements.txt
-
-# Set up environment
+# Copy example environment file
 cp ai-service/.env.example ai-service/.env
-# Edit ai-service/.env with your GEMINI_API_KEY
 
-# AMD GPU only:
-# set TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
+# Edit ai-service/.env with your keys:
+# GEMINI_API_KEY=your_api_key_here
+# ALLOWED_ORIGINS=http://localhost:3000
+```
 
-# Run the service
+#### 2. AMD GPU Setup (if applicable)
+
+```bash
+# Windows PowerShell
+$env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
+
+# Linux/Mac
+export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
+```
+
+#### 3. Start the services
+
+**Terminal 1 - Backend:**
+```bash
+.venv\Scripts\activate
 python -m uvicorn ai-service.main:app --port 8000
-# API at http://localhost:8000
 ```
 
-## Project Structure
-
-```
-Sturgeon/
-├── frontend/                   # Next.js 14
-│   ├── app/
-│   │   ├── page.tsx           # Upload + history
-│   │   ├── debate/page.tsx    # Debate chat
-│   │   ├── summary/page.tsx   # Final diagnosis
-│   │   ├── context/           # React Context (case state)
-│   │   └── api/               # Routes -> Python backend
-│   └── components/
-│
-├── ai-service/                 # Python FastAPI
-│   ├── main.py                # Endpoints + session management
-│   ├── medgemma.py            # MedGemma model loader + inference
-│   ├── gemini_orchestrator.py # Gemini orchestrator + clinical state
-│   ├── prompts.py             # Prompt templates
-│   └── .env.example           # Environment variable template
-│
-├── CLAUDE.md                   # AI assistant instructions
-├── STURGEON_PROJECT_PLAN.md    # Full technical plan
-└── CHANGELOG.md                # All code changes
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
+npm run dev
 ```
 
-## API Endpoints
+**Open** http://localhost:3000
 
-| Endpoint         | Method | Description                                                         |
-| ---------------- | ------ | ------------------------------------------------------------------- |
-| `/health`        | GET    | Health check + orchestrator status                                  |
-| `/analyze-image` | POST   | Analyze medical images (MedSigLIP triage + MedGemma interpretation) |
-| `/extract-labs`  | POST   | Extract structured lab values from text                             |
-| `/differential`  | POST   | Generate initial differential diagnoses                             |
-| `/debate-turn`   | POST   | Handle a debate round (orchestrated)                                |
-| `/summary`       | POST   | Generate final diagnosis summary                                    |
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## References
 
-This project incorporates techniques from the following research:
 
-- **CHECK Framework**: Garcia-Fernandez et al. "Trustworthy AI for Medicine: Continuous Hallucination Detection and Elimination with CHECK." arXiv:2506.11129 (June 2025). — Post-generation validation, hallucination detection with structured databases.
-- **HALO Framework**: Anjum et al. "HALO: Hallucination Analysis and Learning Optimization to Empower LLMs with Retrieval-Augmented Context for Guided Clinical Decision Making." arXiv:2409.10011 (September 2024). — Multiple query variations, MMR scoring for context prioritization.
-- **Guide-RAG**: DiGiacomo et al. "Guide-RAG: Evidence-Driven Corpus Curation for Retrieval-Augmented Generation in Long COVID." arXiv:2510.15782 (October 2025). — Guidelines + systematic reviews corpus curation, faithfulness/relevance/comprehensiveness metrics.
-- **Mayo Reverse RAG**: Plumb, Taryn. "Mayo Clinic's secret weapon against AI hallucinations: Reverse RAG in action." VentureBeat (March 2025). — Verification-first approach with traceable citations.
+<!-- USAGE EXAMPLES -->
+## Usage
 
+### Example Workflow
+
+1. **Upload Evidence**
+   - Drag & drop medical images (X-rays, CT scans, dermatology photos)
+   - Upload lab reports (PDF or TXT)
+   - Enter patient history
+
+2. **Review Analysis**
+   - AI analyzes images using MedSigLIP + MedGemma
+   - Lab values extracted and structured
+   - Initial differential generated with probabilities
+
+3. **Challenge the Diagnosis**
+   - Ask "What if this is autoimmune instead?"
+   - Request "What test would differentiate these?"
+   - Question the reasoning
+
+4. **Iterate**
+   - AI updates differential based on your challenges
+   - Probabilities adjust with new information
+   - Clinical guidelines cited when relevant
+
+5. **Final Summary**
+   - Consensus diagnosis with confidence level
+   - Full reasoning chain documented
+   - Next steps and ruled-out conditions
+
+### API Example
+
+```bash
+# Generate differential
+curl -X POST http://localhost:8000/differential \
+  -H "Content-Type: application/json" \
+  -d '{
+    "patient_history": "45yo female, dry cough 3 weeks, chest tightness",
+    "lab_values": {"WBC": "11.2", "CRP": "15"}
+  }'
+
+# Response includes rate limit headers:
+# X-RateLimit-Limit: 10
+# X-RateLimit-Remaining: 9
+# X-RateLimit-Window: 60
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- ARCHITECTURE -->
+## Architecture
+
+Sturgeon uses an **agentic dual-model architecture** that maps directly to the Agentic Workflow Prize criteria:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        USER INTERFACE                        │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ Upload Page  │  │ Debate Page  │  │  Summary Page    │  │
+│  │  (Next.js)   │  │  (Next.js)   │  │   (Next.js)      │  │
+│  └──────────────┘  └──────────────┘  └──────────────────┘  │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ HTTP/REST
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    FASTAPI BACKEND                           │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │              AGENTIC ORCHESTRATION                       ││
+│  │  ┌──────────────┐      ┌──────────────────────────┐    ││
+│  │  │   Gemini 3   │─────▶│  MedGemma 4B-it         │    ││
+│  │  │  Flash       │◀─────│  (HAI-DEF Specialist)    │    ││
+│  │  │              │      │                          │    ││
+│  │  │ • Manages    │      │ • Clinical reasoning     │    ││
+│  │  │   conversation    │      │ • Differential diagnosis │    ││
+│  │  │ • Summarizes│      │ • Medical image analysis │    ││
+│  │  │   debate state    │      │ • Evidence evaluation    │    ││
+│  │  │ • Routes to │      │                          │    ││
+│  │  │   MedGemma  │      │                          │    ││
+│  │  └──────────────┘      └──────────────────────────┘    ││
+│  └─────────────────────────────────────────────────────────┘│
+│                                                              │
+│  Supporting Services:                                        │
+│  • MedSigLIP (image triage)                                 │
+│  • RAG Retriever (clinical guidelines)                      │
+│  • Hallucination Checker (validation)                       │
+│  • Rate Limiter (API protection)                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Why This Architecture?
+
+- **MedGemma** wasn't trained for multi-turn conversation, but excels at medical reasoning
+- **Gemini** handles what MedGemma can't: context management, debate flow, synthesis
+- **Result**: Best of both worlds - medical accuracy + conversational fluency
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- API REFERENCE -->
+## API Reference
+
+| Endpoint | Method | Rate Limit | Description |
+|----------|--------|------------|-------------|
+| `/health` | GET | - | Service status + model availability |
+| `/analyze-image` | POST | 5/min | Medical image analysis (MedSigLIP + MedGemma) |
+| `/extract-labs` | POST | 15/min | Extract structured lab values from text |
+| `/extract-labs-file` | POST | 5/min | Extract labs from PDF/TXT files |
+| `/differential` | POST | 10/min | Generate initial differential diagnoses |
+| `/debate-turn` | POST | 20/min | Handle debate round (orchestrated) |
+| `/summary` | POST | 10/min | Generate final diagnosis summary |
+| `/rag-status` | GET | - | RAG retriever status & statistics |
+
+All endpoints return rate limit headers:
+- `X-RateLimit-Limit`: Maximum requests per window
+- `X-RateLimit-Remaining`: Remaining requests
+- `X-RateLimit-Window`: Window size in seconds
+- `Retry-After`: Seconds until retry (when rate limited)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- ROADMAP -->
+## Roadmap
+
+### ✅ Completed
+
+- [x] Agentic dual-model architecture (Gemini + MedGemma)
+- [x] Multi-modal upload (images + lab reports)
+- [x] RAG integration with clinical guidelines
+- [x] Comprehensive citation detection (15+ medical organizations)
+- [x] Hallucination prevention with auto-retry
+- [x] Rate limiting with visual UI feedback
+- [x] Session persistence via localStorage
+- [x] Mobile responsive design
+- [x] 156 backend unit tests passing
+
+### 🚧 In Progress
+
+- [ ] Demo video recording
+- [ ] Submission documentation
+- [ ] Vercel deployment setup
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- RESEARCH -->
+## Research & References
+
+This project incorporates techniques from cutting-edge medical AI research:
+
+### Hallucination Prevention
+- **CHECK Framework** - Garcia-Fernandez et al. "Trustworthy AI for Medicine: Continuous Hallucination Detection and Elimination with CHECK." *arXiv:2506.11129* (2025)
+- **HALO Framework** - Anjum et al. "HALO: Hallucination Analysis and Learning Optimization to Empower LLMs with Retrieval-Augmented Context for Guided Clinical Decision Making." *arXiv:2409.10011* (2024)
+
+### RAG & Citations
+- **Guide-RAG** - DiGiacomo et al. "Guide-RAG: Evidence-Driven Corpus Curation for Retrieval-Augmented Generation in Long COVID." *arXiv:2510.15782* (2025)
+- **Mayo Reverse RAG** - Plumb, Taryn. "Mayo Clinic's secret weapon against AI hallucinations: Reverse RAG in action." *VentureBeat* (2025)
+
+### Medical AI
+- **MedGemma** - Google's medical foundation model (HAI-DEF)
+- **MedSigLIP** - Biomedical vision-language model for image understanding
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- LICENSE -->
 ## License
 
-[CC BY 4.0](LICENSE) - Creative Commons Attribution 4.0 International
+Distributed under the CC BY 4.0 License. See [LICENSE](LICENSE) for more information.
 
-This project is licensed under CC BY 4.0 to comply with the MedGemma Impact Challenge winner obligations. You are free to use, modify, and distribute this work with attribution.
+This project uses the CC BY 4.0 license to comply with MedGemma Impact Challenge winner obligations, ensuring open access to medical AI research.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- ACKNOWLEDGMENTS -->
+## Acknowledgments
+
+* [Google](https://ai.google/) - MedGemma model and Gemini API
+* [HeroUI](https://heroui.com/) - Modern React component library
+* [FastAPI](https://fastapi.tiangolo.com/) - High-performance Python web framework
+* [HuggingFace](https://huggingface.co/) - Model hosting and Transformers library
+* [Vercel](https://vercel.com/) - Frontend deployment platform
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- MARKDOWN LINKS & IMAGES -->
+<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+[contributors-shield]: https://img.shields.io/github/contributors/weekijie/Sturgeon.svg?style=for-the-badge
+[contributors-url]: https://github.com/weekijie/Sturgeon/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/weekijie/Sturgeon.svg?style=for-the-badge
+[forks-url]: https://github.com/weekijie/Sturgeon/network/members
+[stars-shield]: https://img.shields.io/github/stars/weekijie/Sturgeon.svg?style=for-the-badge
+[stars-url]: https://github.com/weekijie/Sturgeon/stargazers
+[issues-shield]: https://img.shields.io/github/issues/weekijie/Sturgeon.svg?style=for-the-badge
+[issues-url]: https://github.com/weekijie/Sturgeon/issues
+[license-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=for-the-badge
+[license-url]: https://github.com/weekijie/Sturgeon/blob/main/LICENSE
+[product-screenshot]: frontend/public/screenshot.png
+
+[Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
+[Next-url]: https://nextjs.org/
+[React.js]: https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB
+[React-url]: https://reactjs.org/
+[TypeScript]: https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white
+[TypeScript-url]: https://www.typescriptlang.org/
+[Python]: https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white
+[Python-url]: https://www.python.org/
+[FastAPI]: https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi
+[FastAPI-url]: https://fastapi.tiangolo.com/
+[PyTorch]: https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white
+[PyTorch-url]: https://pytorch.org/
+[Tailwind]: https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white
+[Tailwind-url]: https://tailwindcss.com/
+[HeroUI]: https://img.shields.io/badge/HeroUI-000000?style=for-the-badge&logo=react&logoColor=white
+[HeroUI-url]: https://heroui.com/

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { copyRateLimitHeaders } from "../utils";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 
@@ -16,6 +17,10 @@ export async function POST(request: NextRequest) {
       signal: AbortSignal.timeout(DEBATE_TIMEOUT_MS),
     });
 
+    // Prepare headers with rate limit info
+    const headers = new Headers();
+    copyRateLimitHeaders(response.headers, headers);
+
     if (!response.ok) {
       // Parse backend error — FastAPI returns { detail: "..." }
       let detail = "Backend error";
@@ -27,12 +32,12 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.json(
         { error: "Backend error", detail },
-        { status: response.status }
+        { status: response.status, headers }
       );
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { headers });
   } catch (error) {
     // Handle timeout specifically
     if (error instanceof Error && error.name === "TimeoutError") {

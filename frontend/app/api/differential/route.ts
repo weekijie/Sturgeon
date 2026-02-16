@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { copyRateLimitHeaders } from "../utils";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 const TIMEOUT_MS = 60000; // 1 minute for differential (faster than debate)
@@ -14,6 +15,10 @@ export async function POST(request: NextRequest) {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
 
+    // Prepare headers with rate limit info
+    const headers = new Headers();
+    copyRateLimitHeaders(response.headers, headers);
+
     if (!response.ok) {
       let detail = "Backend error";
       try {
@@ -24,12 +29,12 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.json(
         { error: "Backend error", detail },
-        { status: response.status }
+        { status: response.status, headers }
       );
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { headers });
   } catch (error) {
     if (error instanceof Error && error.name === "TimeoutError") {
       return NextResponse.json(

@@ -6,7 +6,7 @@ Architecture:
   - Gemini (Pro/Flash) = Orchestrator for multi-turn debate management
   - MedGemma 4B-it = Medical specialist (callable tool)
 """
-from fastapi import FastAPI, HTTPException, UploadFile, File as FastAPIFile
+from fastapi import FastAPI, HTTPException, UploadFile, File as FastAPIFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from PIL import Image
@@ -40,6 +40,7 @@ try:
     from formatters import format_lab_values, format_differential, format_rounds
     from rag_retriever import get_retriever, GuidelineRetriever
     from hallucination_check import validate_differential_response, validate_debate_response
+    from rate_limiter import check_rate_limit
 except ImportError:
     from .medgemma import get_model
     from .medsiglip import get_siglip
@@ -56,6 +57,7 @@ except ImportError:
     from .formatters import format_lab_values, format_differential, format_rounds
     from .rag_retriever import get_retriever, GuidelineRetriever
     from .hallucination_check import validate_differential_response, validate_debate_response
+    from .rate_limiter import check_rate_limit
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -189,8 +191,11 @@ async def rag_status():
 
 
 @app.post("/extract-labs", response_model=ExtractLabsResponse)
-async def extract_labs(request: ExtractLabsRequest):
+async def extract_labs(request: ExtractLabsRequest, req: Request):
     """Extract structured lab values from text."""
+    # Check rate limit
+    rate_limit_headers = check_rate_limit("extract-labs", req)
+    
     logger.info(f"Extracting labs from text ({len(request.lab_report_text)} chars)")
     
     try:
@@ -204,9 +209,17 @@ async def extract_labs(request: ExtractLabsRequest):
         
         data = extract_json(response)
         
-        return ExtractLabsResponse(
+        # Return response with rate limit headers
+        response_data = ExtractLabsResponse(
             lab_values=data.get("lab_values", {}),
             abnormal_values=data.get("abnormal_values", [])
+        )
+        
+        # Add rate limit headers to response
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content=response_data.model_dump(),
+            headers=rate_limit_headers
         )
     except HTTPException:
         raise
@@ -216,7 +229,7 @@ async def extract_labs(request: ExtractLabsRequest):
 
 
 @app.post("/extract-labs-file", response_model=ExtractLabsFileResponse)
-async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
+async def extract_labs_file(req: Request, file: UploadFile = FastAPIFile(...)):
     """Extract structured lab values from an uploaded PDF or text file.
     
     Workflow:
@@ -225,6 +238,9 @@ async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
     3. Send to MedGemma via EXTRACT_LABS_PROMPT for structured parsing
     4. Return structured lab values + abnormal flags + raw text
     """
+    # Check rate limit
+    rate_limit_headers = check_rate_limit("extract-labs-file", req)
+    
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
     
@@ -297,10 +313,18 @@ async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
             response = model.generate(prompt, system_prompt=SYSTEM_PROMPT, max_new_tokens=2048, temperature=0.3)
             data = extract_json(response)
         
-        return ExtractLabsFileResponse(
+        # Return response with rate limit headers
+        response_data = ExtractLabsFileResponse(
             lab_values=data.get("lab_values", {}),
             abnormal_values=data.get("abnormal_values", []),
             raw_text=raw_text[:5000]  # Cap at 5k chars for response size
+        )
+        
+        # Add rate limit headers to response
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content=response_data.model_dump(),
+            headers=rate_limit_headers
         )
     
     except HTTPException:
@@ -314,8 +338,11 @@ async def extract_labs_file(file: UploadFile = FastAPIFile(...)):
 
 
 @app.post("/differential", response_model=DifferentialResponse)
-async def generate_differential(request: DifferentialRequest):
+async def generate_differential(request: DifferentialRequest, req: Request):
     """Generate initial differential diagnoses with hallucination validation."""
+    # Check rate limit
+    rate_limit_headers = check_rate_limit("differential", req)
+    
     logger.info("Generating differential for patient history")
     
     try:
@@ -383,7 +410,16 @@ JSON Response:"""
         
         t_final = time.time()
         logger.info(f"[differential] total={t_final-t0:.2f}s diagnoses={len(diagnoses)}")
-        return DifferentialResponse(diagnoses=diagnoses)
+        
+        # Return response with rate limit headers
+        response_data = DifferentialResponse(diagnoses=diagnoses)
+        
+        # Add rate limit headers to response
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content=response_data.model_dump(),
+            headers=rate_limit_headers
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -392,14 +428,24 @@ JSON Response:"""
 
 
 @app.post("/debate-turn", response_model=DebateTurnResponse)
-async def debate_turn(request: DebateTurnRequest):
+async def debate_turn(request: DebateTurnRequest, req: Request):
     """Handle a debate round - orchestrated by Gemini, powered by MedGemma."""
+    # Check rate limit
+    rate_limit_headers = check_rate_limit("debate-turn", req)
+    
     logger.info(f"Processing debate turn: {request.user_challenge[:50]}...")
     
     if _gemini_available:
-        return await _debate_turn_orchestrated(request)
+        result = await _debate_turn_orchestrated(request)
     else:
-        return await _debate_turn_medgemma_only(request)
+        result = await _debate_turn_medgemma_only(request)
+    
+    # Add rate limit headers to response
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=result.model_dump(),
+        headers=rate_limit_headers
+    )
 
 
 async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnResponse:
@@ -684,7 +730,7 @@ def _parse_differential(updated_diff: list) -> list[Diagnosis]:
 
 
 @app.post("/analyze-image", response_model=ImageAnalysisResponse)
-async def analyze_image(file: UploadFile = FastAPIFile(...)):
+async def analyze_image(req: Request, file: UploadFile = FastAPIFile(...)):
     """Analyze a medical image using MedSigLIP triage + MedGemma deep analysis.
     
     Pipeline:
@@ -693,6 +739,9 @@ async def analyze_image(file: UploadFile = FastAPIFile(...)):
     2. MedGemma: Deep clinical interpretation — receives the image + MedSigLIP
        triage summary as context for focused analysis
     """
+    # Check rate limit
+    rate_limit_headers = check_rate_limit("analyze-image", req)
+    
     logger.info(f"Analyzing image: {file.filename} ({file.content_type})")
     
     # Validate file type
@@ -837,7 +886,8 @@ Be specific and cite visible features in the image."""
     t_total = time.time()
     logger.info(f"[analyze-image] total={t_total-t0:.2f}s")
     
-    return ImageAnalysisResponse(
+    # Return response with rate limit headers
+    response_data = ImageAnalysisResponse(
         image_type=triage_result.get("image_type", "medical image"),
         image_type_confidence=triage_result.get("image_type_confidence", 0.0),
         modality=triage_result.get("modality", "unknown"),
@@ -848,11 +898,21 @@ Be specific and cite visible features in the image."""
         triage_summary=triage_result.get("triage_summary", ""),
         medgemma_analysis=medgemma_analysis,
     )
+    
+    # Add rate limit headers to response
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=response_data.model_dump(),
+        headers=rate_limit_headers
+    )
 
 
 @app.post("/summary", response_model=SummaryResponse)
-async def generate_summary(request: SummaryRequest):
+async def generate_summary(request: SummaryRequest, req: Request):
     """Generate final diagnosis summary."""
+    # Check rate limit
+    rate_limit_headers = check_rate_limit("summary", req)
+    
     logger.info("Generating final diagnosis summary")
     
     try:
@@ -887,13 +947,21 @@ async def generate_summary(request: SummaryRequest):
             else:
                 ruled_out.append(str(item))
         
-        return SummaryResponse(
+        # Return response with rate limit headers
+        response_data = SummaryResponse(
             final_diagnosis=data.get("final_diagnosis", "Unable to determine"),
             confidence=data.get("confidence", "low"),
             confidence_percent=data.get("confidence_percent"),
             reasoning_chain=data.get("reasoning_chain", []),
             ruled_out=ruled_out,
             next_steps=data.get("next_steps", [])
+        )
+        
+        # Add rate limit headers to response
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content=response_data.model_dump(),
+            headers=rate_limit_headers
         )
     except HTTPException:
         raise

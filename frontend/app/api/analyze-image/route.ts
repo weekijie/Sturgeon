@@ -26,14 +26,40 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const error = await response.text();
+      const headers = new Headers();
+      // Pass through rate limit headers
+      const rateLimitHeaders = [
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining", 
+        "X-RateLimit-Window",
+        "Retry-After"
+      ];
+      rateLimitHeaders.forEach(h => {
+        const val = response.headers.get(h);
+        if (val) headers.set(h, val);
+      });
+      
       return NextResponse.json(
         { error: "Backend error", details: error },
-        { status: response.status }
+        { status: response.status, headers }
       );
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    
+    // Pass through rate limit headers
+    const headers = new Headers();
+    const rateLimitHeaders = [
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Window"
+    ];
+    rateLimitHeaders.forEach(h => {
+      const val = response.headers.get(h);
+      if (val) headers.set(h, val);
+    });
+    
+    return NextResponse.json(data, { headers });
   } catch (error) {
     if (error instanceof Error && error.name === "TimeoutError") {
       return NextResponse.json(

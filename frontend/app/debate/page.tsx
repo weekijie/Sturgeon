@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, Button, Input, Chip } from "@heroui/react";
 import { useCase, Diagnosis, Citation } from "../context/CaseContext";
 import Prose from "../../components/Prose";
+import { RateLimitStatus, parseRateLimitHeaders, isRateLimitError } from "../../components/RateLimitUI";
 
 type Probability = "high" | "medium" | "low";
 
@@ -78,6 +79,8 @@ export default function DebatePage() {
   const [suggestedTest, setSuggestedTest] = useState<string | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false); // 1F: mobile sidebar toggle
+  const [rateLimitInfo, setRateLimitInfo] = useState<{ limit: number; remaining: number; window: number; retryAfter?: number } | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Hydration guard: localStorage data isn't available during SSR
@@ -151,6 +154,10 @@ export default function DebatePage() {
         }),
       });
 
+      // Capture rate limit info from headers
+      const rateInfo = parseRateLimitHeaders(response.headers);
+      if (rateInfo) setRateLimitInfo(rateInfo);
+
       if (!response.ok) {
         // Try to read actual error details from response body
         let errorDetail = "Failed to get AI response";
@@ -160,6 +167,11 @@ export default function DebatePage() {
         } catch {
           // Response body wasn't JSON
         }
+        
+        if (isRateLimitError(response)) {
+          setIsRateLimited(true);
+        }
+        
         throw new Error(errorDetail);
       }
 
@@ -448,6 +460,13 @@ export default function DebatePage() {
 
         {/* Right Panel - Chat */}
         <section className="flex-1 flex flex-col min-w-0 h-[calc(100vh-52px-3px)]">
+          {/* Rate Limit Status */}
+          {(rateLimitInfo || isRateLimited) && (
+            <div className="px-3 sm:px-4 md:px-6 pt-3">
+              <RateLimitStatus rateLimitInfo={rateLimitInfo} isRateLimited={isRateLimited} />
+            </div>
+          )}
+
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-4 min-h-0">
             {messages.map((msg, idx) => (

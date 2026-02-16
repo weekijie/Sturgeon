@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, Button, Chip } from "@heroui/react";
 import { useCase, ImageAnalysis, LabResults } from "./context/CaseContext";
 import Prose from "../components/Prose";
+import { RateLimitStatus, parseRateLimitHeaders, isRateLimitError } from "../components/RateLimitUI";
 
 // Helper: is the file an image?
 function isImageFile(file: File): boolean {
@@ -88,6 +89,8 @@ export default function UploadPage() {
   const [imageResult, setImageResult] = useState<ImageAnalysis | null>(null);
   const [labResult, setLabResult] = useState<LabResults | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rateLimitInfo, setRateLimitInfo] = useState<{ limit: number; remaining: number; window: number; retryAfter?: number } | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
 
   const hasAnyFile = imageFile || labFile;
 
@@ -179,8 +182,15 @@ export default function UploadPage() {
               body: formData,
             });
 
+            // Capture rate limit info from headers
+            const rateInfo = parseRateLimitHeaders(imageResponse.headers);
+            if (rateInfo) setRateLimitInfo(rateInfo);
+
             if (!imageResponse.ok) {
               const errData = await imageResponse.json().catch(() => ({}));
+              if (isRateLimitError(imageResponse)) {
+                setIsRateLimited(true);
+              }
               throw new Error(
                 errData.details || errData.error || "Image analysis failed",
               );
@@ -202,8 +212,15 @@ export default function UploadPage() {
               body: formData,
             });
 
+            // Capture rate limit info from headers
+            const rateInfo = parseRateLimitHeaders(labResponse.headers);
+            if (rateInfo) setRateLimitInfo(rateInfo);
+
             if (!labResponse.ok) {
               const errData = await labResponse.json().catch(() => ({}));
+              if (isRateLimitError(labResponse)) {
+                setIsRateLimited(true);
+              }
               throw new Error(
                 errData.detail ||
                   errData.details ||
@@ -268,8 +285,15 @@ export default function UploadPage() {
         }),
       });
 
+      // Capture rate limit info from headers
+      const rateInfo = parseRateLimitHeaders(response.headers);
+      if (rateInfo) setRateLimitInfo(rateInfo);
+
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
+        if (isRateLimitError(response)) {
+          setIsRateLimited(true);
+        }
         throw new Error(
           errData.detail ||
             "Failed to generate differential. Please try again.",
@@ -668,6 +692,9 @@ export default function UploadPage() {
                 className="w-full rounded-lg bg-white border border-border px-4 py-3 text-sm text-foreground placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-teal/40 focus:border-teal resize-none transition-colors"
               />
             </div>
+
+            {/* Rate Limit Status */}
+            <RateLimitStatus rateLimitInfo={rateLimitInfo} isRateLimited={isRateLimited} />
 
             {/* Error Message */}
             {error && (
