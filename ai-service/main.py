@@ -24,8 +24,30 @@ load_dotenv()
 # Imports - handle both package-style and direct invocation
 # When run as: python -m uvicorn "ai-service.main:app" → relative imports fail
 # because "ai-service" has a hyphen. Use try/except to handle both cases.
+
+# Check if vLLM should be used
+USE_VLLM = os.getenv("USE_VLLM", "false").lower() == "true"
+
+# Configure logging early
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 try:
-    from medgemma import get_model
+    # Try to import vLLM version if USE_VLLM is set
+    if USE_VLLM:
+        try:
+            from medgemma_vllm import get_vllm_model as get_model, is_vllm_available
+            if is_vllm_available():
+                logger.info("Using vLLM backend for MedGemma")
+            else:
+                logger.warning("vLLM not available, falling back to standard backend")
+                from medgemma import get_model
+        except ImportError as e:
+            logger.warning(f"vLLM import failed: {e}. Using standard backend.")
+            from medgemma import get_model
+    else:
+        from medgemma import get_model
+    
     from medsiglip import get_siglip
     from gemini_orchestrator import get_orchestrator, ClinicalState
     from prompts import (SYSTEM_PROMPT, EXTRACT_LABS_PROMPT, DIFFERENTIAL_PROMPT,
@@ -42,7 +64,16 @@ try:
     from hallucination_check import validate_differential_response, validate_debate_response
     from rate_limiter import check_rate_limit
 except ImportError:
-    from .medgemma import get_model
+    # Try vLLM in relative import mode
+    if USE_VLLM:
+        try:
+            from .medgemma_vllm import get_vllm_model as get_model, is_vllm_available
+            if not is_vllm_available():
+                from .medgemma import get_model
+        except ImportError:
+            from .medgemma import get_model
+    else:
+        from .medgemma import get_model
     from .medsiglip import get_siglip
     from .gemini_orchestrator import get_orchestrator, ClinicalState
     from .prompts import (SYSTEM_PROMPT, EXTRACT_LABS_PROMPT, DIFFERENTIAL_PROMPT,
@@ -58,10 +89,6 @@ except ImportError:
     from .rag_retriever import get_retriever, GuidelineRetriever
     from .hallucination_check import validate_differential_response, validate_debate_response
     from .rate_limiter import check_rate_limit
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # In-memory session store for clinical states
 # Maps session_id -> ClinicalState
