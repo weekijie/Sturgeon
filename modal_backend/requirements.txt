@@ -1,0 +1,25 @@
+# Modal deployment requirements
+# These are installed via modal.Image.uv_pip_install() in app.py
+
+# Core
+vllm==0.6.6
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+
+# AI/ML
+google-genai>=1.0.0
+transformers>=4.47.0
+torch>=2.5.0
+
+# RAG
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+
+# Utilities
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+Pillow>=10.0.0
+pdfplumber>=0.11.0
+httpx
+pyyaml>=6.0.0
