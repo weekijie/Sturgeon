@@ -6,6 +6,7 @@ import { Card, Button, Chip } from "@heroui/react";
 import { useCase, ImageAnalysis, LabResults } from "./context/CaseContext";
 import Prose from "../components/Prose";
 import { RateLimitStatus, parseRateLimitHeaders, isRateLimitError } from "../components/RateLimitUI";
+import { demoCases, loadDemoImage, DemoCase } from "../lib/demo-cases";
 
 // Helper: is the file an image?
 function isImageFile(file: File): boolean {
@@ -154,6 +155,31 @@ export default function UploadPage() {
     clearImage();
     clearLab();
   }, [clearImage, clearLab]);
+
+  // Load a demo case
+  const loadDemoCase = async (demoCase: DemoCase) => {
+    // Clear current state
+    clearAll();
+    setPatientHistoryLocal(demoCase.patientHistory);
+    setError(null);
+    
+    // Load image if available
+    if (demoCase.imageFile) {
+      try {
+        const image = await loadDemoImage(demoCase.imageFile);
+        if (image) {
+          setImageFile(image);
+          const preview = await readAsDataUrl(image);
+          setImagePreview(preview);
+        }
+      } catch (error) {
+        console.error("Failed to load demo image:", error);
+      }
+    }
+    
+    // Note: Lab values are embedded in patient history for demo cases
+    // In production, we could create synthetic lab PDFs
+  };
 
   const handleAnalyze = async () => {
     resetCase();
@@ -486,6 +512,34 @@ export default function UploadPage() {
                 </div>
               )}
             </div>
+
+            {/* Demo Cases */}
+            {!hasAnyFile && !patientHistory && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">
+                  Try a Demo Case
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {demoCases.map((demoCase) => (
+                    <button
+                      key={demoCase.id}
+                      onClick={() => loadDemoCase(demoCase)}
+                      disabled={isAnalyzing}
+                      className="text-xs bg-white border border-slate-300 hover:border-teal hover:bg-teal-light/30 text-slate-700 hover:text-teal-700 px-3 py-2 rounded-lg transition-colors text-left"
+                      title={`${demoCase.category}: ${demoCase.description}`}
+                    >
+                      <span className="font-semibold">{demoCase.name}</span>
+                      <span className="block text-slate-500 text-[10px] mt-0.5">
+                        {demoCase.category}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-2">
+                  Click to auto-fill with sample data
+                </p>
+              </div>
+            )}
 
             {/* Image Analysis Results */}
             {imageResult && (
