@@ -106,6 +106,7 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 - **📊 Multi-Modal Analysis** - Process medical images + lab reports simultaneously  
 - **🔍 RAG-Enhanced Reasoning** - Clinical guidelines with automatic citation extraction
 - **🛡️ Hallucination Prevention** - Auto-validation with retry on detected fabrications
+- **📐 LLM-as-Judge Evaluation** - Faithfulness, relevance, comprehensiveness metrics
 - **⚡ Smart Rate Limiting** - Per-endpoint quota management with visual feedback
 - **💾 Session Persistence** - Cases saved locally, resume anytime
 - **📱 Mobile Responsive** - Full functionality on any device
@@ -349,9 +350,10 @@ All endpoints return rate limit headers:
 
 - [x] Agentic dual-model architecture (Gemini + MedGemma)
 - [x] Multi-modal upload (images + lab reports)
-- [x] RAG integration with clinical guidelines
+- [x] RAG integration with clinical guidelines (14 documents)
 - [x] Comprehensive citation detection (15+ medical organizations)
 - [x] Hallucination prevention with auto-retry
+- [x] LLM-as-Judge evaluation framework
 - [x] Rate limiting with visual UI feedback
 - [x] Session persistence via localStorage
 - [x] Mobile responsive design
@@ -380,6 +382,9 @@ This project incorporates techniques from cutting-edge medical AI research:
 
 ### RAG & Citations
 - **Guide-RAG** - DiGiacomo et al. "Guide-RAG: Evidence-Driven Corpus Curation for Retrieval-Augmented Generation in Long COVID." *arXiv:2510.15782* (2025)
+  - Implemented: GS-4 configuration (guidelines + systematic reviews)
+  - Parameters: TOP_K=12, CHUNK_OVERLAP=500
+  - Evaluation: LLM-as-Judge framework (faithfulness, relevance, comprehensiveness)
 - **Mayo Reverse RAG** - Plumb, Taryn. "Mayo Clinic's secret weapon against AI hallucinations: Reverse RAG in action." *VentureBeat* (2025)
 
 ### Medical AI

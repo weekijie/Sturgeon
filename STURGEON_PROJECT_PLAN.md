@@ -1,7 +1,7 @@
 # Sturgeon - Complete Project Plan
 
-> **Deadline**: February 24, 2026 (~20 days remaining)  
-> **Status**: Ready to Build
+> **Deadline**: February 24, 2026 (~3 days remaining)  
+> **Status**: Ready to Submit
 
 ---
 
@@ -509,11 +509,12 @@ Sturgeon/
 - [x] Add session persistence (localStorage)
 - [x] Multi-file upload (image + lab report simultaneously)
 - [x] Refusal preamble stripping for cleaner MedGemma output
-- [ ] RAG with clinical guidelines (stretch goal)
+- [x] RAG with clinical guidelines (14 documents)
+- [x] LLM-as-Judge evaluation framework
 - [ ] Fine-tune MedGemma for debate (stretch goal)
 - [ ] Demo video recorded (≤3 min)
 - [ ] Write-up completed (≤3 pages)
-- [ ] GitHub repo cleaned up with README
+- [x] GitHub repo cleaned up with README
 - [ ] Live demo on Vercel
 - [ ] Submitted to Kaggle
 

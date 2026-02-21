@@ -52,9 +52,9 @@ This framing directly maps to the Agentic Workflow Prize: "deploying HAI-DEF mod
 
 ### Brand Identity
 
-- **Design System**: Medical Dark Theme (Slate #0F172A)
-- **Key UI Elements**: Glassmorphism headers, Pulse animations, Teal accents
-- **Typography**: Outfit (Modern, Geometric)
+- **Design System**: Medical Light Theme (PubMed/NIH-inspired)
+- **Key UI Elements**: Clean white backgrounds, Teal accents (#0D9488)
+- **Typography**: Source Sans 3 + Source Code Pro (Google Fonts)
 
 ### AMD GPU Setup (Required)
 
@@ -88,6 +88,11 @@ $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 10. **Git: generate commit messages only**: Do NOT run `git add`, `git commit`, or `git push` commands. Instead, generate the commit message/description for the user to input manually via VS Code Source Control or GitHub Desktop. PowerShell's PSReadLine crashes on multiline commit messages (terminal buffer overflow), and `&&` chaining is not supported in older PowerShell versions.
 11. **Read before editing**: Always read/view the file (or relevant section) before making edits. Do not edit files blindly from memory — the file may have changed since you last saw it.
 12. **ALWAYS use `.venv/Scripts/python` for backend**: All Python commands (tests, scripts, pip installs) MUST use the virtual environment Python at `.venv/Scripts/python`. Never use system Python or global pip. This prevents dependency conflicts and ensures reproducibility.
+13. **Document problems encountered**: When you face issues, bugs, or unexpected challenges during a session, document them in CHANGELOG.md under the session entry. Include:
+    - The problem/issue faced
+    - Why it happened (if understood)
+    - How it was resolved
+    - Any workarounds or lessons learned
 
 ---
 
@@ -244,7 +249,26 @@ Before suggesting or implementing any new external tool, library, or API:
 - [x] **Mobile UI polish** — Fixed text overflow in upload page, sidebar header spacing, touch-friendly interactions
 - [x] **Hallucination prevention** — Prompt guardrails + validation module + auto-retry on detected fabrications
 - [x] **Research attribution** — Added References section to README (CHECK, HALO, Guide-RAG, Mayo Reverse RAG)
-- [x] **Hallucination test suite** — 15 tests for detection module (133 total tests passing)
+- [x] **Hallucination test suite** — 15 tests for detection module (156 total tests passing)
+- [x] **Guide-RAG alignment** — Aligned RAG implementation with arXiv:2510.15782 paper findings
+- [x] **Added AAD melanoma guidelines** — ABCDE criteria, biopsy recommendations, staging (14 total guidelines)
+- [x] **Added melanoma systematic review** — AI vs clinicians for skin cancer diagnosis (CC BY 4.0)
+- [x] **RAG parameter tuning** — TOP_K=12, CHUNK_OVERLAP=500 for better comprehensiveness
+- [x] **LLM-as-Judge evaluation framework** — Faithfulness, relevance, comprehensiveness metrics (Gemini-based)
+- [x] **RAG evaluation endpoint** — `/rag-evaluate` for development/debugging
+- [x] **Demo case realignment** — 3 cases: Melanoma, Pneumonia, Sepsis (aligned with corpus)
+- [x] **Prompt guardrails hardening** — Removed hardcoded lab examples, prevents fabricated citations
+- [x] **MedGemma CPU precision fix** — float32 fallback for CPU inference
+- [x] **MedSigLIP safety** — model.eval() + skip wrong labels for unknown modality
+- [x] **Hallucination detection improvements** — Position tracking, unit normalization, history extraction
+- [x] **Session management** — MAX_SESSIONS cap, CORS trim, RAG eval guard
+- [x] **RAG audit PHI redaction** — Digits masked, queries truncated in logs
+- [x] **Frontend HeroUI v3 upgrade** — Fixed all component APIs for v3 compatibility
+- [x] **Demo labs wiring** — Lab values now influence differential generation
+- [x] **Rate-limit UI improvements** — Simplified countdown, reset on new requests
+- [x] **Image context in debate** — MedGemma summary included for richer context
+- [x] **API header unification** — Consistent rate-limit passthrough across routes
+- [x] **Logo and branding** — Added SVG logo for README
 
 ### Next Steps (Priority Order)
 
@@ -275,6 +299,8 @@ See `CHANGELOG.md` for all code changes.
 **Feb 14, 2026**: Backend modularization + UI polish + test suite. Split monolithic `main.py` into focused modules (`models.py`, `json_utils.py`, `refusal.py`, `formatters.py`). Added comprehensive unit test suite (41 tests covering JSON parsing, refusal detection, formatters). Enhanced prompts with few-shot examples and Chain-of-Thought reasoning. Added input validation, suggested challenge chips, PDF export, mobile-responsive collapsible sidebar, and visual probability bars.
 
 **Feb 16, 2026**: Hallucination prevention system. New `hallucination_check.py` module detects fabricated lab values. Integrated validation into `/differential` and `/debate-turn` endpoints with auto-retry. Added prompt guardrails removing hardcoded example values (8.2 g/dL hemoglobin). Fixed frontend state reset on new case. Added academic references (CHECK, HALO, Guide-RAG, Mayo Reverse RAG). 133 tests passing.
+
+**Feb 21, 2026**: Hallucination hardening + HeroUI v3 upgrade. Backend: removed hardcoded ferritin from prompts, fixed MedGemma CPU precision (float32), MedSigLIP eval mode, improved hallucination detection (position/unit tracking), added session cap/CORS trim/RAG eval guard/PHI redaction, fixed AAD citation mapping. Frontend: wired demo labs, fixed reset after validation, simplified rate-limit UI, added MedGemma summary to image_context, unified API headers, upgraded to HeroUI v3 (fixed all component APIs), added logo. 156 tests passing.
 
 ---
 
