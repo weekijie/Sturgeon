@@ -42,6 +42,8 @@ rag_audit.log
 .eggs/
 *.egg
 
+# Skills
+.agents/
 
 # HuggingFace cache (large files)
 .cache/huggingface/
@@ -52,5 +54,3 @@ coverage/
 *.pem
 next-env.d.ts
 
-# Test data (medical images, etc.)
-test-data/
