@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2026-02-21] Session 17 — Documentation & Process Improvements
+## [2026-02-21] Session 16 — Documentation & Process Improvements
 ### Documentation
 #### Added
 - **Development Methodology** (`CLAUDE.md`):

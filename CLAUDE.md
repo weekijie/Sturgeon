@@ -272,13 +272,12 @@ Before suggesting or implementing any new external tool, library, or API:
 
 ### Next Steps (Priority Order)
 
-1. [x] Get higher-res breast carcinoma test image (current is 50×50px)
-2. [ ] Prepare demo script (`DEMO_SCRIPT.md`)
-3. [ ] Record demo video (≤3 min)
-4. [ ] Write submission document
-5. [ ] Polish README with screenshots
-6. [ ] Deploy frontend to Vercel
-7. [ ] Submit to Kaggle
+1. [ ] Prepare demo script (`DEMO_SCRIPT.md`)
+2. [ ] Record demo video (≤3 min)
+3. [ ] Write submission document
+4. [ ] Polish README with screenshots
+5. [ ] Deploy frontend to Vercel
+6. [ ] Submit to Kaggle
 
 ---
 
