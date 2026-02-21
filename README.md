@@ -426,7 +426,7 @@ This project uses the CC BY 4.0 license to comply with MedGemma Impact Challenge
 [issues-url]: https://github.com/weekijie/Sturgeon/issues
 [license-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=for-the-badge
 [license-url]: https://github.com/weekijie/Sturgeon/blob/main/LICENSE
-[product-screenshot]: frontend/public/screenshot.png
+[product-screenshot]: frontend/public/test-data/test1.png
 
 [Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
 [Next-url]: https://nextjs.org/

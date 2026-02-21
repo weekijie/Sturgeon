@@ -27,9 +27,9 @@ load_dotenv()
 try:
     from medgemma import get_model
     from medsiglip import get_siglip
-    from gemini_orchestrator import get_orchestrator, ClinicalState
+    from gemini_orchestrator import get_orchestrator, ClinicalState, extract_citations
     from prompts import (SYSTEM_PROMPT, EXTRACT_LABS_PROMPT, DIFFERENTIAL_PROMPT,
-                         DEBATE_TURN_PROMPT, SUMMARY_PROMPT)
+                         DEBATE_TURN_PROMPT, DEBATE_TURN_PROMPT_WITH_RAG, SUMMARY_PROMPT)
     from models import (ExtractLabsRequest, ExtractLabsResponse, ExtractLabsFileResponse,
                         DifferentialRequest, Diagnosis, DifferentialResponse,
                         DebateTurnRequest, DebateTurnResponse,
@@ -38,15 +38,16 @@ try:
     from json_utils import extract_json
     from refusal import is_pure_refusal, strip_refusal_preamble
     from formatters import format_lab_values, format_differential, format_rounds
-    from rag_retriever import get_retriever, GuidelineRetriever
+    from rag_retriever import get_retriever, GuidelineRetriever, RetrievedChunk
     from hallucination_check import validate_differential_response, validate_debate_response
     from rate_limiter import check_rate_limit
+    from rag_evaluation import get_evaluator, RetrievedContext
 except ImportError:
     from .medgemma import get_model
     from .medsiglip import get_siglip
-    from .gemini_orchestrator import get_orchestrator, ClinicalState
+    from .gemini_orchestrator import get_orchestrator, ClinicalState, extract_citations
     from .prompts import (SYSTEM_PROMPT, EXTRACT_LABS_PROMPT, DIFFERENTIAL_PROMPT,
-                          DEBATE_TURN_PROMPT, SUMMARY_PROMPT)
+                          DEBATE_TURN_PROMPT, DEBATE_TURN_PROMPT_WITH_RAG, SUMMARY_PROMPT)
     from .models import (ExtractLabsRequest, ExtractLabsResponse, ExtractLabsFileResponse,
                          DifferentialRequest, Diagnosis, DifferentialResponse,
                          DebateTurnRequest, DebateTurnResponse,
@@ -55,9 +56,10 @@ except ImportError:
     from .json_utils import extract_json
     from .refusal import is_pure_refusal, strip_refusal_preamble
     from .formatters import format_lab_values, format_differential, format_rounds
-    from .rag_retriever import get_retriever, GuidelineRetriever
+    from .rag_retriever import get_retriever, GuidelineRetriever, RetrievedChunk
     from .hallucination_check import validate_differential_response, validate_debate_response
     from .rate_limiter import check_rate_limit
+    from .rag_evaluation import get_evaluator, RetrievedContext
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -66,6 +68,7 @@ logger = logging.getLogger(__name__)
 # In-memory session store for clinical states
 # Maps session_id -> ClinicalState
 _sessions: dict[str, ClinicalState] = {}
+MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "500"))
 
 # Flags: which optional services are available?
 _gemini_available = False
@@ -130,6 +133,13 @@ async def lifespan(app: FastAPI):
     logger.info("Ready to serve requests.")
     yield
     logger.info("Shutting down...")
+    if _rag_available:
+        try:
+            retriever = get_retriever()
+            retriever.close()
+            logger.info("RAG retriever closed.")
+        except Exception as e:
+            logger.warning(f"Failed to close RAG retriever: {e}")
 
 
 app = FastAPI(
@@ -140,7 +150,11 @@ app = FastAPI(
 )
 
 # CORS for Next.js frontend
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -188,6 +202,54 @@ async def rag_status():
             "available": False,
             "error": str(e)
         }
+
+
+@app.post("/rag-evaluate")
+async def rag_evaluate(request: dict, req: Request):
+    """
+    Evaluate RAG response quality using LLM-as-a-Judge (Gemini).
+    
+    Internal endpoint for development/debugging - not for production use.
+    
+    Request body:
+    {
+        "question": "Clinical question asked",
+        "response": "AI response to evaluate",
+        "retrieved_contexts": [
+            {"content": "...", "source": "...", "topic": "...", "distance": 0.5}
+        ]
+    }
+    
+    Returns evaluation scores (faithfulness, relevance, comprehensiveness).
+    """
+    if not os.getenv("ENABLE_RAG_EVAL"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    question = request.get("question", "")
+    response = request.get("response", "")
+    contexts_data = request.get("retrieved_contexts", [])
+    
+    if not question or not response:
+        raise HTTPException(status_code=400, detail="question and response are required")
+    
+    # Convert to RetrievedContext objects
+    contexts = [
+        RetrievedContext(
+            content=c.get("content", ""),
+            source=c.get("source", "Unknown"),
+            topic=c.get("topic", "general"),
+            distance=c.get("distance", 0.0)
+        )
+        for c in contexts_data
+    ]
+    
+    try:
+        evaluator = get_evaluator()
+        result = evaluator.evaluate_response(question, response, contexts)
+        return result.to_dict()
+    except Exception as e:
+        logger.error(f"RAG evaluation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
 
 
 @app.post("/extract-labs", response_model=ExtractLabsResponse)
@@ -463,14 +525,15 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
         async def fetch_rag_context():
             try:
                 retriever = get_retriever()
-                # Use the user's challenge directly — no hardcoded fallback keywords
-                # Let semantic search find relevant guidelines naturally
-                rag_query = request.user_challenge
+                # Enrich query with clinical context from differential
+                # Raw user challenge alone often lacks clinical signal
+                # (e.g., "summarize key findings" → retrieves colorectal cancer)
+                dx_names = [d.name for d in request.current_differential[:3]]
+                rag_query = f"{request.user_challenge} | Clinical context: {', '.join(dx_names)}" if dx_names else request.user_challenge
                 chunks, rag_error = await asyncio.to_thread(
                     retriever.retrieve,
                     query=rag_query,
                     ip_address="internal",
-                    top_k=3
                 )
                 if rag_error:
                     logger.warning(f"[RAG] Retrieval error: {rag_error}")
@@ -496,6 +559,10 @@ async def _debate_turn_orchestrated(request: DebateTurnRequest) -> DebateTurnRes
     # Get or create session (happens in parallel with RAG)
     session_id = request.session_id or str(uuid.uuid4())
     if session_id not in _sessions:
+        if len(_sessions) >= MAX_SESSIONS:
+            oldest_session = next(iter(_sessions))
+            _sessions.pop(oldest_session, None)
+            logger.info(f"Evicted oldest session: {oldest_session}")
         _sessions[session_id] = ClinicalState(
             patient_history=request.patient_history,
             lab_values=request.lab_values,
@@ -569,13 +636,13 @@ async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnRe
             async def fetch_rag_context():
                 try:
                     retriever = get_retriever()
-                    # Use raw user challenge — no hardcoded fallback keywords
-                    rag_query = request.user_challenge
+                    # Enrich query with clinical context from differential
+                    dx_names = [d.name for d in request.current_differential[:3]]
+                    rag_query = f"{request.user_challenge} | Clinical context: {', '.join(dx_names)}" if dx_names else request.user_challenge
                     chunks, rag_error = await asyncio.to_thread(
                         retriever.retrieve,
                         query=rag_query,
                         ip_address="internal",
-                        top_k=3
                     )
                     if not rag_error and chunks:
                         # Filter by distance threshold — same as orchestrated path
@@ -611,8 +678,7 @@ async def _debate_turn_medgemma_only(request: DebateTurnRequest) -> DebateTurnRe
                 logger.warning("[RAG fallback] Retrieval timed out after 5s")
                 retrieved_guidelines = ""
         
-        # Import the modified prompt
-        from prompts import DEBATE_TURN_PROMPT_WITH_RAG
+        # DEBATE_TURN_PROMPT_WITH_RAG is imported at module level
         
         # Use RAG-enhanced prompt if available, otherwise standard prompt
         if retrieved_guidelines:
@@ -679,7 +745,7 @@ Return corrected JSON:"""
         
         # RAG: Extract citations from response (fallback mode)
         ai_response_text = data.get("ai_response", "")
-        from gemini_orchestrator import extract_citations
+        # extract_citations is imported at module level
         _, citations = extract_citations(ai_response_text)
         
         logger.info(f"[RAG fallback] Extracted {len(citations)} citations")

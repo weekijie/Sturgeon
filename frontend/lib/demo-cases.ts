@@ -2,17 +2,22 @@
  * Demo Test Cases for Sturgeon
  * 
  * Pre-loaded medical cases for demonstration purposes.
- * Each case includes patient history, lab values, and references to test images.
+ * Aligned with Guide-RAG paper evaluation framework.
+ * 
+ * 3 Cases:
+ * 1. Melanoma (Dermatology) — Visual diagnosis star
+ * 2. Pneumonia (Radiology) — Classic MedGemma case
+ * 3. Sepsis (Multi-modal) — Lab extraction + reasoning
  */
 
 export interface DemoCase {
   id: string;
   name: string;
-  category: "Dermatology" | "Pathology" | "Radiology" | "General";
+  category: "Dermatology" | "Radiology" | "Multi-Modal";
   description: string;
   patientHistory: string;
   labValues: Record<string, { value: string; unit: string; status: "normal" | "high" | "low" }>;
-  imageFile?: string; // Path to test image in test-data/
+  imageFile?: string;
   suggestedChallenges: string[];
 }
 
@@ -21,16 +26,16 @@ export const demoCases: DemoCase[] = [
     id: "melanoma",
     name: "Suspected Melanoma",
     category: "Dermatology",
-    description: "43-year-old male with changing mole on upper back",
-    patientHistory: `43-year-old male presents with a changing mole on his upper back, first noticed by his wife 3 months ago.
+    description: "45-year-old male with changing pigmented lesion on upper back",
+    patientHistory: `45-year-old male presents with a pigmented lesion on his upper back that he noticed 6 months ago. He reports it has been growing larger and the borders seem irregular. No family history of melanoma. Works as a construction worker with significant sun exposure.
 
-Chief Complaint: Pigmented skin lesion that has grown and changed color over the past 3 months.
+Chief Complaint: Changing mole on upper back — growing larger, irregular borders over 6 months.
 
 History of Present Illness:
-- Mole was previously flat and uniform brown, approximately 4mm
+- Lesion was previously flat and uniform brown, approximately 4mm
 - Now raised, asymmetric, with irregular borders
 - Color variation: dark brown, black, and reddish-pink areas
-- Current size approximately 9mm (grown from ~4mm)
+- Current size approximately 8mm (grown from ~4mm)
 - Occasional itching, no bleeding or ulceration
 - No pain at rest
 
@@ -40,7 +45,7 @@ Past Medical History:
 - No family history of melanoma
 
 Social History:
-- Outdoor construction worker for 20 years
+- Construction worker for 20 years (outdoor exposure)
 - Minimal sunscreen use historically
 - Fair skin, light brown hair, blue eyes (Fitzpatrick type II)
 - No tobacco, occasional alcohol
@@ -49,7 +54,7 @@ Physical Examination:
 - Asymmetric pigmented macule/papule on upper back
 - Irregular, notched borders
 - Color variegation: brown, black, red-pink
-- Diameter 9mm
+- Diameter 8mm
 - Elevated centrally (previously flat per patient)
 - ABCDE criteria: A+, B+, C+, D+, E+
 - No palpable axillary or cervical lymphadenopathy
@@ -59,172 +64,136 @@ Physical Examination:
       "Hemoglobin": { value: "14.8", unit: "g/dL", status: "normal" },
       "Platelets": { value: "245", unit: "x10^9/L", status: "normal" },
       "LDH": { value: "185", unit: "U/L", status: "normal" },
-      "CRP": { value: "2.1", unit: "mg/L", status: "normal" },
     },
     imageFile: "test-data/derm-melanoma.jpg",
     suggestedChallenges: [
-      "Could this just be a dysplastic nevus? The patient has no family history of melanoma.",
+      "What if this is just a benign nevus? The patient has no family history.",
       "LDH is normal — doesn't that argue against melanoma?",
-      "The lesion is only 9mm. Couldn't watchful waiting be appropriate?",
-      "What about seborrheic keratosis? Those can also look irregular in older patients.",
+      "The lesion is only 8mm. Couldn't watchful waiting be appropriate?",
+      "Could this be seborrheic keratosis instead?",
     ],
   },
   {
-    id: "psoriasis",
-    name: "Psoriasis vs Eczema",
-    category: "Dermatology",
-    description: "28-year-old female with recurring scaly plaques",
-    patientHistory: `28-year-old female presents with recurring, scaly plaques on her elbows and knees for 6 months.
+    id: "pneumonia",
+    name: "Community-Acquired Pneumonia",
+    category: "Radiology",
+    description: "68-year-old male with fever, cough, and chest X-ray infiltrate",
+    patientHistory: `68-year-old male presents with 4 days of fever, productive cough with yellow sputum, right-sided pleuritic chest pain, and progressive dyspnea.
 
-Chief Complaint: Itchy, red, scaly patches on elbows, knees, and scalp.
-
-History of Present Illness:
-- Started as small red patch on right elbow 6 months ago
-- Gradually spread to both elbows, both knees, scalp, and lower back
-- Lesions are well-demarcated, raised, erythematous plaques with silvery-white scales
-- Auspitz sign positive (pinpoint bleeding when scales removed)
-- Moderate pruritus, worsens with stress and cold weather
-- Koebner phenomenon noted — new lesions appearing at site of scratch
-- No joint pain or stiffness
-- Tried OTC hydrocortisone cream with minimal improvement
-
-Past Medical History:
-- Father has psoriasis (diagnosed age 35)
-- No prior skin conditions
-- No autoimmune diseases
-
-Social History:
-- Office worker, moderate stress level
-- Non-smoker, social drinker
-- No recent medication changes
-
-Physical Examination:
-- Well-demarcated erythematous plaques with thick silvery scales
-- Distribution: bilateral elbows, knees, scalp (behind ears), sacral area
-- Auspitz sign positive
-- Nail examination: pitting on 3 fingernails, no onycholysis
-- No joint swelling or tenderness
-- BSA involvement estimated at 8%`,
-    labValues: {
-      "WBC": { value: "8.1", unit: "x10^9/L", status: "normal" },
-      "Hemoglobin": { value: "13.2", unit: "g/dL", status: "normal" },
-      "CRP": { value: "8.5", unit: "mg/L", status: "normal" },
-      "Uric Acid": { value: "7.1", unit: "mg/dL", status: "high" },
-      "Fasting Glucose": { value: "102", unit: "mg/dL", status: "high" },
-      "Total Cholesterol": { value: "218", unit: "mg/dL", status: "high" },
-      "LDL": { value: "142", unit: "mg/dL", status: "high" },
-    },
-    imageFile: "test-data/derm-psoriasis.jpg",
-    suggestedChallenges: [
-      "How do you rule out nummular eczema? Both present as round scaly plaques.",
-      "The metabolic abnormalities are interesting — is there a connection to the skin disease?",
-      "Could this be secondary syphilis? The patient is young with a widespread rash.",
-      "Nail pitting is present — should we be concerned about psoriatic arthritis even without joint symptoms?",
-    ],
-  },
-  {
-    id: "breast-carcinoma",
-    name: "Breast Carcinoma",
-    category: "Pathology",
-    description: "56-year-old female with BI-RADS 5 lesion on mammography",
-    patientHistory: `56-year-old female presents after mammography screening revealed a 2.3cm spiculated mass in the upper outer quadrant of the left breast.
-
-Chief Complaint: Abnormal screening mammogram finding, referred for biopsy.
+Chief Complaint: Fever, productive cough, and shortness of breath for 4 days.
 
 History of Present Illness:
-- Routine annual mammogram showed BI-RADS 5 lesion (highly suggestive of malignancy)
-- 2.3cm spiculated mass, upper outer quadrant, left breast
-- Patient was asymptomatic — no palpable lump, pain, or nipple discharge
-- No skin changes (dimpling, peau d'orange)
-- Ultrasound confirmed solid hypoechoic mass with irregular margins
-- Core needle biopsy performed 3 days ago, pathology pending
-
-Past Medical History:
-- Menarche age 11, nulliparous
-- No prior breast biopsies
-- No HRT use
-- Maternal aunt diagnosed with breast cancer at age 62
-- BRCA testing not previously performed
-
-Social History:
-- Accountant, sedentary lifestyle
-- BMI 28.5
-- Non-smoker
-- 1-2 glasses of wine per week
-- No occupational exposures
-
-Physical Examination:
-- Left breast: no palpable mass (deep lesion), no skin changes
-- No axillary lymphadenopathy bilaterally
-- Right breast normal
-- No hepatomegaly`,
-    labValues: {
-      "WBC": { value: "6.8", unit: "x10^9/L", status: "normal" },
-      "Hemoglobin": { value: "12.9", unit: "g/dL", status: "normal" },
-      "CA 15-3": { value: "42", unit: "U/mL", status: "high" },
-      "CEA": { value: "3.8", unit: "ng/mL", status: "high" },
-      "Calcium": { value: "9.8", unit: "mg/dL", status: "normal" },
-      "LDH": { value: "195", unit: "U/L", status: "normal" },
-    },
-    imageFile: "test-data/path-breast-carcinoma.png",
-    suggestedChallenges: [
-      "CA 15-3 is only mildly elevated. Isn't it unreliable for early-stage disease?",
-      "ER/PR positive and HER2 negative — doesn't this actually carry a better prognosis?",
-      "Ki-67 is 22%. Is that high enough to classify this as Luminal B?",
-      "The patient has no palpable mass. Could this be DCIS rather than invasive carcinoma?",
-    ],
-  },
-  {
-    id: "lung-adenocarcinoma",
-    name: "Lung Adenocarcinoma",
-    category: "Pathology",
-    description: "62-year-old male with persistent cough and incidental CT finding",
-    patientHistory: `62-year-old male presents with persistent cough and incidental finding on chest CT.
-
-Chief Complaint: 3-month history of dry cough, unintentional weight loss of 5kg.
-
-History of Present Illness:
-- Persistent dry cough for 3 months, not responding to antibiotics
-- Unintentional weight loss of 5kg over 2 months
-- Mild dyspnea on exertion (climbing 2 flights of stairs)
+- Fever up to 38.9°C (102°F) for 4 days
+- Productive cough with yellow-green sputum
+- Right-sided pleuritic chest pain
+- Progressive dyspnea — now dyspneic walking one block
 - No hemoptysis
-- No chest pain
-- CT chest revealed 2.8cm spiculated nodule in right upper lobe with ground-glass halo
-- PET scan showed FDG avidity (SUV max 8.2)
-- CT-guided biopsy performed, pathology result below
+- Symptoms started gradually, worsening over 4 days
 
 Past Medical History:
-- 30 pack-year smoking history (quit 5 years ago)
-- COPD (mild, on PRN albuterol)
 - Hypertension (controlled on lisinopril)
-- No prior malignancy
+- Type 2 diabetes (on metformin)
+- Hyperlipidemia (on atorvastatin)
+- Former smoker (30 pack-years, quit 8 years ago)
 
 Social History:
-- Retired mechanic (asbestos exposure possible)
-- Former smoker (quit 5 years ago)
-- Lives with wife, independent ADLs
+- Retired accountant
+- Lives with wife
+- No sick contacts
+- No recent travel
+
+Vital Signs:
+- Temperature: 38.9°C (102°F)
+- Heart rate: 110 bpm
+- Respiratory rate: 24/min
+- Blood pressure: 98/62 mmHg
+- SpO2: 91% on room air
 
 Physical Examination:
-- Decreased breath sounds right upper lobe
-- No wheezing or crackles
-- No clubbing or cyanosis
-- No cervical or supraclavicular lymphadenopathy
-- No hepatomegaly`,
+- Ill-appearing, diaphoretic male
+- Tachypneic, using accessory muscles
+- Right base: decreased breath sounds, crackles, dullness to percussion
+- Left lung: clear
+- No wheezing
+- Regular tachycardia, no murmurs
+- No JVD, no peripheral edema`,
     labValues: {
-      "WBC": { value: "9.8", unit: "x10^9/L", status: "normal" },
-      "Hemoglobin": { value: "11.2", unit: "g/dL", status: "low" },
-      "CEA": { value: "12.4", unit: "ng/mL", status: "high" },
-      "CYFRA 21-1": { value: "5.8", unit: "ng/mL", status: "high" },
-      "Calcium": { value: "10.8", unit: "mg/dL", status: "high" },
-      "LDH": { value: "310", unit: "U/L", status: "high" },
-      "D-dimer": { value: "0.88", unit: "mg/L", status: "high" },
+      "WBC": { value: "15.8", unit: "x10^9/L", status: "high" },
+      "Hemoglobin": { value: "13.2", unit: "g/dL", status: "normal" },
+      "Platelets": { value: "198", unit: "x10^9/L", status: "normal" },
+      "Creatinine": { value: "1.4", unit: "mg/dL", status: "high" },
+      "BUN": { value: "28", unit: "mg/dL", status: "high" },
+      "Lactate": { value: "2.8", unit: "mmol/L", status: "high" },
+      "CRP": { value: "85", unit: "mg/L", status: "high" },
+      "Procalcitonin": { value: "4.2", unit: "ng/mL", status: "high" },
     },
-    imageFile: "test-data/path-lung-adenocarcinoma.jpeg",
+    imageFile: "test-data/person100_bacteria_475.jpeg",
     suggestedChallenges: [
-      "The patient quit smoking 5 years ago. Could this be a benign granuloma rather than malignancy?",
-      "EGFR exon 19 deletion — doesn't this change the treatment approach entirely compared to wild-type?",
-      "Hemoglobin is low with normal MCV. Is this anemia of chronic disease or could there be bone marrow involvement?",
-      "LDH and calcium are both elevated. Should we be staging this higher than the imaging suggests?",
+      "Could this be heart failure instead? He has diabetes and hypertension.",
+      "The patient is hypotensive. Should he go to the ICU?",
+      "What is his CURB-65 score and what does it mean for disposition?",
+      "Should we test for Legionella given the severity?",
+    ],
+  },
+  {
+    id: "sepsis",
+    name: "Septic Shock (UTI Source)",
+    category: "Multi-Modal",
+    description: "72-year-old female with confusion, fever, hypotension",
+    patientHistory: `72-year-old female with a history of diabetes and recurrent UTIs presents from a nursing home with 2 days of confusion, fever, and decreased urine output. She was last seen normal 48 hours ago.
+
+Chief Complaint: Altered mental status and fever from nursing home.
+
+History of Present Illness:
+- Found confused and febrile at nursing home this morning
+- Last seen normal 48 hours ago by nursing staff
+- Decreased urine output over past 24 hours (voided only once)
+- No cough, no abdominal pain reported (patient unable to give history reliably)
+- Nursing home reports patient had been complaining of "burning when peeing" 3 days ago
+
+Past Medical History:
+- Type 2 diabetes (on glipizide + sitagliptin)
+- Recurrent UTIs (3 episodes in past year)
+- Hypertension (on amlodipine)
+- Chronic kidney disease stage 2 (baseline creatinine 1.0)
+- No known drug allergies
+
+Social History:
+- Nursing home resident for 2 years
+- Bedridden, requires assistance with ADLs
+- Foley catheter removed 2 weeks ago
+
+Vital Signs:
+- Temperature: 39.2°C (102.6°F)
+- Heart rate: 118 bpm
+- Respiratory rate: 26/min
+- Blood pressure: 84/52 mmHg
+- SpO2: 94% on room air
+
+Physical Examination:
+- Elderly female, ill-appearing, somnolent but arousable
+- Oriented only to person
+- Tachycardic, regular rhythm
+- Tachypneic, lungs clear bilaterally
+- Abdomen soft, non-tender, no masses
+- Suprapubic tenderness on palpation
+- No focal neurological deficits`,
+    labValues: {
+      "WBC": { value: "18.2", unit: "x10^9/L", status: "high" },
+      "Hemoglobin": { value: "11.8", unit: "g/dL", status: "low" },
+      "Platelets": { value: "132", unit: "x10^9/L", status: "low" },
+      "Creatinine": { value: "2.1", unit: "mg/dL", status: "high" },
+      "BUN": { value: "42", unit: "mg/dL", status: "high" },
+      "Lactate": { value: "4.2", unit: "mmol/L", status: "high" },
+      "Procalcitonin": { value: "8.5", unit: "ng/mL", status: "high" },
+      "Glucose": { value: "285", unit: "mg/dL", status: "high" },
+    },
+    imageFile: undefined,
+    suggestedChallenges: [
+      "What if this is just dehydration from poor oral intake?",
+      "How do you differentiate sepsis from simple UTI?",
+      "What are the qSOFA criteria and does she meet them?",
+      "Should we start vasopressors given the hypotension?",
     ],
   },
 ];
@@ -247,9 +216,10 @@ export function formatLabValuesForDisplay(labValues: DemoCase["labValues"]): str
 
 /**
  * Load demo case files (returns File objects for images)
- * Note: In browser environment, you'll need to use fetch + File constructor
  */
-export async function loadDemoImage(filePath: string): Promise<File | null> {
+export async function loadDemoImage(filePath: string | undefined): Promise<File | null> {
+  if (!filePath) return null;
+  
   try {
     const response = await fetch(filePath);
     if (!response.ok) return null;

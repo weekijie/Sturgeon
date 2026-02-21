@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@heroui/styles";
+@import "@heroui/styles/css";
 
 /* Sturgeon Medical Theme - Light Mode (PubMed/NIH-inspired) */
 :root {

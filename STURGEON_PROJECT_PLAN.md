@@ -574,7 +574,7 @@ Sturgeon/
 - [ ] Public GitHub repository with:
   - [ ] README with setup instructions
   - [ ] requirements.txt / package.json
-  - [ ] MIT license
+- [ ] CC BY 4.0 license
   - [ ] Clear code organization
 - [ ] Kaggle Writeup created and submitted
 

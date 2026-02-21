@@ -88,6 +88,7 @@ class MedSigLIPModel:
             self.device = "cpu"
 
         self.model = AutoModel.from_pretrained(model_id).to(self.device)
+        self.model.eval()
         self.processor = AutoProcessor.from_pretrained(model_id)
 
         logger.info(f"MedSigLIP loaded on {self.device}")
@@ -202,23 +203,29 @@ class MedSigLIPModel:
             finding_labels = MEDICAL_IMAGE_LABELS["pathology_findings"]
             modality = "pathology"
         else:
-            # For CT, MRI, fundus, clinical photos, etc. -- use chest X-ray labels
-            # as a reasonable default, but flag it
-            finding_labels = MEDICAL_IMAGE_LABELS["chest_xray_findings"]
+            # For CT, MRI, fundus, clinical photos, etc. -- avoid applying the wrong label set
+            finding_labels = None
             modality = "general"
 
-        # Step 4: Classify findings
-        findings = self.classify(image, finding_labels, top_k=5)
+        # Step 4: Classify findings (if we have a matching label set)
+        if finding_labels:
+            findings = self.classify(image, finding_labels, top_k=5)
+            top_findings = [f for f in findings if f["score"] > 0.05]
+        else:
+            findings = []
+            top_findings = []
 
         # Step 5: Build triage summary for MedGemma context
-        top_findings = [f for f in findings if f["score"] > 0.05]
         summary_lines = [
             f"MedSigLIP Image Triage (modality: {modality}):",
             f"  Image type: {image_type} (confidence: {type_confidence:.1%})",
-            "  Top findings:",
         ]
-        for f in top_findings[:5]:
-            summary_lines.append(f"    - {f['label']}: {f['score']:.1%}")
+        if top_findings:
+            summary_lines.append("  Top findings:")
+            for f in top_findings[:5]:
+                summary_lines.append(f"    - {f['label']}: {f['score']:.1%}")
+        else:
+            summary_lines.append("  No finding-specific labels applied for this modality.")
 
         return {
             "image_type": image_type,

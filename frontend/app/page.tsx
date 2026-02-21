@@ -162,6 +162,14 @@ export default function UploadPage() {
     clearAll();
     setPatientHistoryLocal(demoCase.patientHistory);
     setError(null);
+
+    const abnormalValues = Object.entries(demoCase.labValues)
+      .filter(([, value]) => value.status === "high" || value.status === "low")
+      .map(([name]) => name);
+    setLabResult({
+      lab_values: demoCase.labValues,
+      abnormal_values: abnormalValues,
+    });
     
     // Load image if available
     if (demoCase.imageFile) {
@@ -182,16 +190,18 @@ export default function UploadPage() {
   };
 
   const handleAnalyze = async () => {
-    resetCase();
-
     // 1A: Input validation — require at least some evidence
     if (!imageFile && !labFile && !patientHistory.trim()) {
       setError("Please provide at least a patient history or upload evidence (image or lab report) before analyzing.");
       return;
     }
 
+    resetCase();
+
     setIsAnalyzing(true);
     setError(null);
+    setIsRateLimited(false);
+    setRateLimitInfo(null);
 
     try {
       let enrichedHistory = patientHistory;
@@ -294,9 +304,10 @@ export default function UploadPage() {
       }
 
       // Process lab results
-      if (labExtraction) {
-        setLabResult(labExtraction);
-        setLabResults(labExtraction);
+      const resolvedLabResult = labExtraction ?? labResult;
+      if (resolvedLabResult) {
+        setLabResult(resolvedLabResult);
+        setLabResults(resolvedLabResult);
       }
 
       // Step 2: Generate differential diagnosis
@@ -307,7 +318,7 @@ export default function UploadPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patient_history: enrichedHistory,
-          lab_values: labExtraction?.lab_values ?? {},
+          lab_values: resolvedLabResult?.lab_values ?? {},
         }),
       });
 
@@ -416,10 +427,10 @@ export default function UploadPage() {
                         <p className="font-medium text-foreground text-sm truncate min-w-0 flex-1" title={imageFile.name}>
                           {imageFile.name}
                         </p>
-                        <Chip size="sm" variant="flat" className="shrink-0">
+                        <Chip size="sm" variant="soft" className="shrink-0">
                           {(imageFile.size / 1024).toFixed(1)} KB
                         </Chip>
-                        <Chip size="sm" variant="flat" color="secondary" className="shrink-0 hidden sm:inline-flex">
+                        <Chip size="sm" variant="soft" color="accent" className="shrink-0 hidden sm:inline-flex">
                           Medical Image
                         </Chip>
                         <button
@@ -442,10 +453,10 @@ export default function UploadPage() {
                         <p className="font-medium text-foreground text-sm truncate min-w-0 flex-1" title={labFile.name}>
                           {labFile.name}
                         </p>
-                        <Chip size="sm" variant="flat" className="shrink-0">
+                        <Chip size="sm" variant="soft" className="shrink-0">
                           {(labFile.size / 1024).toFixed(1)} KB
                         </Chip>
-                        <Chip size="sm" variant="flat" color="primary" className="shrink-0 hidden sm:inline-flex">
+                        <Chip size="sm" variant="soft" color="accent" className="shrink-0 hidden sm:inline-flex">
                           Lab Report
                         </Chip>
                         <button
@@ -559,7 +570,7 @@ export default function UploadPage() {
                           <Chip
                             key={i}
                             size="sm"
-                            variant="flat"
+                            variant="soft"
                             color={f.score > 0.3 ? "warning" : "default"}
                             className="max-w-full"
                           >
@@ -610,7 +621,7 @@ export default function UploadPage() {
                       Extracted Lab Values
                     </h3>
                     {labResult.abnormal_values.length > 0 && (
-                      <Chip size="sm" variant="flat" color="danger">
+                      <Chip size="sm" variant="soft" color="danger">
                         {labResult.abnormal_values.length} abnormal
                       </Chip>
                     )}
@@ -674,7 +685,7 @@ export default function UploadPage() {
                                   {lab.status && (
                                     <Chip
                                       size="sm"
-                                      variant="flat"
+                                      variant="soft"
                                       color={
                                         lab.status === "high"
                                           ? "danger"
@@ -712,7 +723,7 @@ export default function UploadPage() {
                             <Chip
                               key={i}
                               size="sm"
-                              variant="flat"
+                              variant="soft"
                               color="danger"
                             >
                               {name}
@@ -761,7 +772,7 @@ export default function UploadPage() {
           {/* Card Footer */}
           <div className="p-6 pt-0 flex flex-col items-end gap-2">
             <Button
-              variant="solid"
+              variant="primary"
               onPress={handleAnalyze}
               isDisabled={
                 (!hasAnyFile && !patientHistory.trim()) || isAnalyzing

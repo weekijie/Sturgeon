@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo } from "react";
 
 interface RateLimitInfo {
   limit: number;
@@ -15,24 +15,9 @@ interface RateLimitUIProps {
 }
 
 export function RateLimitStatus({ rateLimitInfo, isRateLimited }: RateLimitUIProps) {
-  const [countdown, setCountdown] = useState<number>(0);
-
-  useEffect(() => {
-    if (isRateLimited && rateLimitInfo?.retryAfter) {
-      setCountdown(rateLimitInfo.retryAfter);
-      
-      const interval = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-
-      return () => clearInterval(interval);
-    }
+  const countdown = useMemo(() => {
+    if (!isRateLimited || !rateLimitInfo?.retryAfter) return 0;
+    return Math.max(0, Math.floor(rateLimitInfo.retryAfter));
   }, [isRateLimited, rateLimitInfo?.retryAfter]);
 
   if (isRateLimited) {
@@ -57,13 +42,13 @@ export function RateLimitStatus({ rateLimitInfo, isRateLimited }: RateLimitUIPro
           </span>
         </div>
         <p className="text-sm text-amber-700 mb-2">
-          You've made too many requests. Please wait before trying again.
+          You have made too many requests. Please wait before trying again.
         </p>
         {countdown > 0 && (
           <div className="flex items-center gap-2 text-amber-800">
             <span className="text-sm">Retry in:</span>
             <span className="font-mono font-bold text-lg">
-              {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
+              {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, "0")}
             </span>
           </div>
         )}

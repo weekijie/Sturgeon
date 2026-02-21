@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { copyRateLimitHeaders } from "../utils";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
-const TIMEOUT_MS = 60000; // 1 minute for image analysis
+const TIMEOUT_MS = 180000; // 3 minutes for image analysis (MedSigLIP + MedGemma pipeline)
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,18 +28,8 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const error = await response.text();
       const headers = new Headers();
-      // Pass through rate limit headers
-      const rateLimitHeaders = [
-        "X-RateLimit-Limit",
-        "X-RateLimit-Remaining", 
-        "X-RateLimit-Window",
-        "Retry-After"
-      ];
-      rateLimitHeaders.forEach(h => {
-        const val = response.headers.get(h);
-        if (val) headers.set(h, val);
-      });
-      
+      copyRateLimitHeaders(response.headers, headers);
+
       return NextResponse.json(
         { error: "Backend error", details: error },
         { status: response.status, headers }
@@ -49,15 +40,7 @@ export async function POST(request: NextRequest) {
     
     // Pass through rate limit headers
     const headers = new Headers();
-    const rateLimitHeaders = [
-      "X-RateLimit-Limit",
-      "X-RateLimit-Remaining",
-      "X-RateLimit-Window"
-    ];
-    rateLimitHeaders.forEach(h => {
-      const val = response.headers.get(h);
-      if (val) headers.set(h, val);
-    });
+    copyRateLimitHeaders(response.headers, headers);
     
     return NextResponse.json(data, { headers });
   } catch (error) {

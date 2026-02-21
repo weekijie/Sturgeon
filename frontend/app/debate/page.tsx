@@ -140,6 +140,13 @@ export default function DebatePage() {
     setIsLoading(true);
 
     try {
+      const imageContext = caseData.imageAnalysis
+        ? [
+            caseData.imageAnalysis.triage_summary || "Image analysis available.",
+            `MedGemma summary: ${caseData.imageAnalysis.medgemma_analysis.slice(0, 600)}`,
+          ].join("\n")
+        : null;
+
       const response = await fetch("/api/debate-turn", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -150,7 +157,7 @@ export default function DebatePage() {
           previous_rounds: caseData.debateRounds,
           user_challenge: userMessage,
           session_id: caseData.sessionId,
-          image_context: caseData.imageAnalysis?.triage_summary || null,
+          image_context: imageContext,
         }),
       });
 
@@ -297,7 +304,7 @@ export default function DebatePage() {
             )}
           </div>
           <Button 
-            variant="bordered" 
+            variant="outline" 
             size="sm" 
             onPress={handleEndSession}
             className="border-border text-foreground hover:border-teal hover:text-teal hover:bg-teal-light/30 transition-colors text-xs md:text-sm"
@@ -385,7 +392,7 @@ export default function DebatePage() {
                         {lab.status && (
                           <Chip
                             size="sm"
-                            variant="flat"
+                            variant="soft"
                             color={
                               lab.status === "high" ? "danger"
                               : lab.status === "low" ? "warning"
@@ -585,10 +592,10 @@ export default function DebatePage() {
                 value={input}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
                 onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && handleSend()}
-                isDisabled={isLoading}
+                disabled={isLoading}
               />
               <Button 
-                variant="solid" 
+                variant="primary" 
                 onPress={handleSend} 
                 isDisabled={isLoading || !input.trim()}
                 className="bg-teal text-white hover:bg-teal/90 font-semibold px-3 sm:px-4 md:px-6 rounded-lg shrink-0"

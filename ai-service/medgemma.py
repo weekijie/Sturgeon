@@ -23,7 +23,7 @@ class MedGemmaModel:
         self.dtype = None
     
     def load(self, model_id: str = "google/medgemma-1.5-4b-it"):
-        """Load MedGemma model with FP16 precision."""
+        """Load MedGemma model with auto-selected precision."""
         logger.info(f"Loading {model_id}...")
         
         # Detect device
@@ -37,7 +37,9 @@ class MedGemmaModel:
         # Auto-detect precision:
         #   bfloat16 → AMD ROCm, NVIDIA Ampere+ (A100, RTX 3090+)
         #   float16  → NVIDIA Turing (T4, GTX 1660, RTX 2080)
-        if self.device == "cuda" and torch.cuda.is_bf16_supported():
+        if self.device == "cpu":
+            self.dtype = torch.float32
+        elif torch.cuda.is_bf16_supported():
             self.dtype = torch.bfloat16
         else:
             self.dtype = torch.float16

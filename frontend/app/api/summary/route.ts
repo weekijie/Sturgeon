@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { copyRateLimitHeaders } from "../utils";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
-const TIMEOUT_MS = 90000; // 90 seconds for summary (can take longer)
+const TIMEOUT_MS = 180000; // 3 minutes for summary (complex cases take longer)
 
 export async function POST(request: NextRequest) {
   try {

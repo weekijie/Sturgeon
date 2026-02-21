@@ -26,7 +26,7 @@ from google.genai import types
 logger = logging.getLogger(__name__)
 
 # Timeout configuration for API calls
-DEFAULT_TIMEOUT_SECONDS = 90.0
+DEFAULT_TIMEOUT_SECONDS = 180.0
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +69,8 @@ GUIDELINE_URLS: Dict[str, str] = {
     "NCCN": "https://www.nccn.org/guidelines/",
     "ASCO": "https://www.asco.org/practice-patients/guidelines",
     "ESMO": "https://www.esmo.org/guidelines",
-    # Dermatology
+    # Dermatology - Specific guidelines
+    "AAD_MELANOMA": "https://www.guidelinecentral.com/guideline/21823/",
     "AAD": "https://www.aad.org/clinical-guidelines",
     "AADA": "https://www.aad.org/clinical-guidelines",
     # Radiology
@@ -108,7 +109,7 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
     
     # All medical organizations to detect - longer/specific ones first to avoid partial matches
     # IMPORTANT: Sub-entry patterns (WHO_MENINGITIS, etc.) must come BEFORE generic fallbacks (WHO)
-    ORGS = r'WHO_MENINGITIS|WHO_HEPATITIS_B|WHO_TB|CDC_LEGIONELLA|CDC_RESPIRATORY|CDC_SEPSIS|USPSTF_COLORECTAL|USPSTF_DIABETES|USPSTF_CARDIO|USPSTF_BREAST|USPSTF|SCCM|ESICM|CHEST|NCCN|ASCO|ESMO|AAD|ACR|ADA|AHA|ACC|IDSA|CDC|ATS|WHO|NICE|BTS|PMC|PubMed|SSC'
+    ORGS = r'WHO_MENINGITIS|WHO_HEPATITIS_B|WHO_TB|CDC_LEGIONELLA|CDC_RESPIRATORY|CDC_SEPSIS|USPSTF_COLORECTAL|USPSTF_DIABETES|USPSTF_CARDIO|USPSTF_BREAST|AAD_MELANOMA|USPSTF|SCCM|ESICM|CHEST|NCCN|ASCO|ESMO|AAD|ACR|ADA|AHA|ACC|IDSA|CDC|ATS|WHO|NICE|BTS|PMC|PubMed|SSC'
     COMBO_ORGS = r'ATS/IDSA|ACC/AHA|Surviving Sepsis Campaign'
     
     # Organization aliases - map alternative names to canonical names for URL lookup
@@ -136,6 +137,10 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
         "USPSTF DIABETES": "USPSTF_DIABETES",
         "USPSTF STATIN": "USPSTF_CARDIO",
         "USPSTF CARDIOVASCULAR": "USPSTF_CARDIO",
+        # AAD sub-entries (check BEFORE generic AAD)
+        "AAD MELANOMA": "AAD_MELANOMA",
+        "AAD MELANOMA GUIDELINES": "AAD_MELANOMA",
+        "AMERICAN ACADEMY OF DERMATOLOGY MELANOMA": "AAD_MELANOMA",
         # Generic fallbacks (check AFTER sub-entries)
         "PRIMARY CARE CLINICS": "PMC",
         "PUBMED CENTRAL": "PMC",
@@ -293,6 +298,10 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
             elif "ESMO" in citation_upper:
                 source = "ESMO"
                 url = GUIDELINE_URLS.get("ESMO", "")
+            # AAD - check for melanoma sub-entry BEFORE generic fallback
+            elif "AAD MELANOMA" in citation_upper or ("MELANOMA" in citation_upper and "AAD" in citation_upper):
+                source = "AAD_MELANOMA"
+                url = GUIDELINE_URLS.get("AAD_MELANOMA", "")
             elif "AAD" in citation_upper:
                 source = "AAD"
                 url = GUIDELINE_URLS.get("AAD", "")
@@ -332,10 +341,15 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
         if not citation_text.startswith("("):
             formatted_text = f"({citation_text})"
         
+        if source == "AAD_MELANOMA":
+            output_source = "AAD"
+            url = GUIDELINE_URLS.get("AAD", "")
+        else:
+            output_source = source
         citations.append({
             "text": formatted_text,
             "url": url,
-            "source": source
+            "source": output_source
         })
     
     def _normalize_citation_key(c: dict) -> str:
@@ -461,14 +475,14 @@ When the user challenges a diagnosis:
 4. Update the differential based on the new evidence/reasoning
 
 IMPORTANT RULES:
-- Always cite specific clinical evidence (e.g., "Based on the ferritin of 847...")
+- Always cite specific clinical evidence (e.g., "Based on the ferritin of [value]...") when values are provided
 - Be conversational but precise -- you're a senior diagnostician leading a case discussion
 - Acknowledge valid challenges and update your reasoning accordingly
 - If the user raises a point that changes the differential, reflect that in the updated diagnoses
 - When defending a diagnosis, provide specific evidence, not vague claims
 
 CONSTRAINTS (for timely responses):
-- Keep responses under 800 tokens (~600 words) to ensure delivery within 90 seconds
+- Keep responses under 800 tokens (~600 words) to ensure delivery within 180 seconds
 - Focus on the 2-3 most critical differential diagnoses
 - Cite evidence concisely (1-2 sentences per point)
 - Suggest at most 1 test per round
@@ -806,6 +820,7 @@ You MUST cite ONLY the above retrieved guidelines when making clinical recommend
     - WHO Meningitis: "(WHO Meningitis Guidelines, 2025)"
     - WHO TB: "(WHO TB Prevention Guidelines, 2024)"
     - WHO Hepatitis B: "(WHO Hepatitis B Guidelines, 2024)"
+    - AAD Melanoma: "(AAD Melanoma Guidelines, 2018)"
     
     Only cite guidelines that are clinically relevant to your recommendation. If a retrieved guideline is not applicable to this case, do not cite it."""
         else:

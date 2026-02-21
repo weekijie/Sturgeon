@@ -246,10 +246,11 @@ class AuditLogger:
     def log_query(self, query: str, ip_address: str, success: bool, 
                   num_results: int = 0, error_msg: str = ""):
         """Log a retrieval query."""
+        redacted_query = self._redact_query(query)
         status = "SUCCESS" if success else "FAILED"
         self.logger.info(
             f"QUERY [{status}] - IP: {ip_address} - "
-            f"Query: '{query[:100]}...' - Results: {num_results}"
+            f"Query: '{redacted_query}' - Results: {num_results}"
             f"{f' - Error: {error_msg}' if error_msg else ''}"
         )
     
@@ -265,11 +266,20 @@ class AuditLogger:
     def log_retrieval(self, query: str, chunks: List[RetrievedChunk], 
                      ip_address: str):
         """Log successful retrieval with chunk details."""
+        redacted_query = self._redact_query(query)
         sources = [f"{c.organization}/{c.topic}" for c in chunks]
         self.logger.info(
-            f"RETRIEVAL - IP: {ip_address} - Query: '{query[:50]}...' - "
+            f"RETRIEVAL - IP: {ip_address} - Query: '{redacted_query}' - "
             f"Sources: {sources}"
         )
+
+    def _redact_query(self, query: str) -> str:
+        """Redact likely PHI by masking digits and truncating length."""
+        masked = re.sub(r"\d", "X", query)
+        masked = re.sub(r"\s+", " ", masked).strip()
+        if len(masked) > 80:
+            return masked[:77] + "..."
+        return masked
 
 
 class GuidelineRetriever:
@@ -279,10 +289,11 @@ class GuidelineRetriever:
     Provides secure, rate-limited vector search with comprehensive audit logging.
     """
     
-    # Default chunking parameters
+    # Default chunking parameters (Guide-RAG paper: 1200 chars, 50% overlap, top-25)
+    # Scaled down for our corpus size: TOP_K=12 (vs paper's 25), OVERLAP=42% (vs 50%)
     CHUNK_SIZE = 1200
-    CHUNK_OVERLAP = 300  # 25% overlap (was 600/50% — excessive for small corpus)
-    TOP_K_DEFAULT = 5
+    CHUNK_OVERLAP = 500  # 42% overlap for better context continuity
+    TOP_K_DEFAULT = 12   # Increased from 5 for better comprehensiveness (Guide-RAG paper)
     
     # Embedding model (lightweight, CPU-only)
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"

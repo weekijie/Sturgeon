@@ -11,7 +11,7 @@ SYSTEM_PROMPT = """You are a diagnostic team member in a clinical case discussio
 4. Explain your thinking clearly
 
 Always cite specific evidence from the case when making claims.
-Use phrases like "Based on the elevated ferritin of 847..." not just "The labs suggest..."
+Use phrases like "Based on the elevated ferritin of [value]..." only when those values are explicitly provided.
 """
 
 EXTRACT_LABS_PROMPT = """Extract all lab values from the following report. For each value, provide:
@@ -121,10 +121,8 @@ Respond by:
 3. Providing an updated differential if warranted
 4. Suggesting a test if it would help clarify
 
-When making clinical recommendations, cite relevant guidelines using this format:
-"(IDSA Guidelines for Community-Acquired Pneumonia, 2023)" or
-"(CDC Legionella Guidelines, 2024)" or
-"(ATS/IDSA Guidelines for Severe CAP, 2022)"
+If you cite guidelines, only cite sources explicitly provided in the case.
+Do not fabricate citations or guideline names.
 
 Be conversational but precise. Return as JSON with this EXACT format:
 {{

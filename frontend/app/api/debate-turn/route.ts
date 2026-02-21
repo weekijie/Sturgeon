@@ -3,8 +3,8 @@ import { copyRateLimitHeaders } from "../utils";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 
-// 2-minute timeout for debate turns (backend has 90s timeout + overhead)
-const DEBATE_TIMEOUT_MS = 120000;
+// 4-minute timeout for debate turns (backend has 180s timeout + overhead)
+const DEBATE_TIMEOUT_MS = 240000;
 
 export async function POST(request: NextRequest) {
   try {

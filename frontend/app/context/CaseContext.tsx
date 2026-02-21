@@ -41,7 +41,7 @@ export interface ImageAnalysis {
 export interface LabValue {
   value: number | string;
   unit: string;
-  reference: string;
+  reference?: string;
   status: "normal" | "high" | "low";
 }
 

@@ -1,0 +1,138 @@
+# RAG Evaluation Test Questions
+# Modeled after LongCOVID-CQ from Guide-RAG paper
+# Each question targets specific clinical domains and expected topics
+
+# =============================================================================
+# PNEUMONIA / RESPIRATORY
+# =============================================================================
+
+pneumonia:
+  - question: "What is the optimal antibiotic duration for community-acquired pneumonia in an immunocompetent outpatient?"
+    expected_topics: ["antibiotic_duration", "outpatient", "CAP"]
+    domain: "pneumonia"
+    
+  - question: "Which severity assessment tool is most appropriate for rapid emergency department triage of pneumonia patients?"
+    expected_topics: ["CURB-65", "PSI", "severity", "triage"]
+    domain: "pneumonia"
+    
+  - question: "What are the indications for ICU admission in community-acquired pneumonia?"
+    expected_topics: ["ICU", "severity", "CURB-65", "respiratory_failure"]
+    domain: "pneumonia"
+    
+  - question: "When should Legionella testing be performed in a patient with pneumonia?"
+    expected_topics: ["Legionella", "testing", "urinary_antigen", "travel"]
+    domain: "pneumonia"
+
+# =============================================================================
+# SEPSIS
+# =============================================================================
+
+sepsis:
+  - question: "What is the recommended time target for antibiotic administration in sepsis?"
+    expected_topics: ["antibiotics", "timing", "sepsis", "mortality"]
+    domain: "sepsis"
+    
+  - question: "Which biomarkers are useful for diagnosing and monitoring sepsis?"
+    expected_topics: ["lactate", "biomarkers", "CRP", "procalcitonin"]
+    domain: "sepsis"
+    
+  - question: "What are the key components of a hospital sepsis screening program?"
+    expected_topics: ["screening", "program", "multidisciplinary", "quality"]
+    domain: "sepsis"
+    
+  - question: "What are the risk factors for post-sepsis syndrome and readmission?"
+    expected_topics: ["readmission", "post_sepsis", "disability", "morbidity"]
+    domain: "sepsis"
+
+# =============================================================================
+# MELANOMA / DERMATOLOGY
+# =============================================================================
+
+melanoma:
+  - question: "What are the ABCDE criteria for evaluating suspicious pigmented lesions?"
+    expected_topics: ["ABCDE", "asymmetry", "border", "color", "diameter", "evolution"]
+    domain: "melanoma"
+    
+  - question: "What is the preferred biopsy technique for a suspicious pigmented lesion?"
+    expected_topics: ["excisional_biopsy", "margins", "Breslow_depth"]
+    domain: "melanoma"
+    
+  - question: "When should sentinel lymph node biopsy be performed for melanoma?"
+    expected_topics: ["SLNB", "Breslow", "staging", "indications"]
+    domain: "melanoma"
+    
+  - question: "What are the dermoscopic features most suspicious for melanoma?"
+    expected_topics: ["dermoscopy", "blue_white_veil", "atypical_network", "streaks"]
+    domain: "melanoma"
+
+# =============================================================================
+# TUBERCULOSIS
+# =============================================================================
+
+tuberculosis:
+  - question: "Who should receive TB preventive treatment (TPT)?"
+    expected_topics: ["TPT", "HIV", "prevention", "latent_TB"]
+    domain: "tuberculosis"
+    
+  - question: "What are the risk factors for progression from TB infection to active disease?"
+    expected_topics: ["progression", "HIV", "diabetes", "immunosuppression"]
+    domain: "tuberculosis"
+    
+  - question: "How should TB infection be diagnosed before starting preventive treatment?"
+    expected_topics: ["TST", "IGRA", "screening", "rule_out_active_TB"]
+    domain: "tuberculosis"
+
+# =============================================================================
+# MENINGITIS
+# =============================================================================
+
+meningitis:
+  - question: "What are the classic clinical features of bacterial meningitis in adults?"
+    expected_topics: ["classic_triad", "fever", "neck_stiffness", "altered_mental_status"]
+    domain: "meningitis"
+    
+  - question: "When should empiric antibiotics be administered in suspected meningitis?"
+    expected_topics: ["empiric", "timing", "antibiotics", "lumbar_puncture"]
+    domain: "meningitis"
+    
+  - question: "What CSF findings suggest bacterial versus viral meningitis?"
+    expected_topics: ["CSF", "WBC", "glucose", "protein", "bacterial_vs_viral"]
+    domain: "meningitis"
+
+# =============================================================================
+# PREVENTIVE SCREENING
+# =============================================================================
+
+screening:
+  - question: "At what age should breast cancer screening begin according to USPSTF recommendations?"
+    expected_topics: ["breast_cancer", "mammography", "age_40", "USPSTF"]
+    domain: "screening"
+    
+  - question: "Who should be screened for prediabetes and type 2 diabetes?"
+    expected_topics: ["diabetes", "screening", "age_35", "overweight", "obesity"]
+    domain: "screening"
+    
+  - question: "What are the recommended colorectal cancer screening modalities?"
+    expected_topics: ["colorectal", "colonoscopy", "FIT", "screening_options"]
+    domain: "screening"
+    
+  - question: "Who should receive statin therapy for primary prevention of cardiovascular disease?"
+    expected_topics: ["statin", "CVD", "risk_factors", "primary_prevention"]
+    domain: "screening"
+
+# =============================================================================
+# CHALLENGING CASES (Complex differential)
+# =============================================================================
+
+challenging:
+  - question: "A 45-year-old male with chronic cough and upper lobe infiltrate — what are the key differentials and how should they be distinguished?"
+    expected_topics: ["TB", "lung_cancer", "fungal_infection", "chronic_cough"]
+    domain: "respiratory"
+    
+  - question: "A 72-year-old female with fever, confusion, and hypotension but no clear source — what is the diagnostic approach?"
+    expected_topics: ["sepsis", "UTI", "pneumonia", "meningitis", "source_control"]
+    domain: "sepsis"
+    
+  - question: "A changing pigmented lesion on the back — what features distinguish melanoma from benign nevi?"
+    expected_topics: ["melanoma", "ABCDE", "dermoscopy", "biopsy"]
+    domain: "melanoma"

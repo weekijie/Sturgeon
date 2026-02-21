@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Button, Divider, Spinner } from "@heroui/react";
+import { Card, Button, Spinner } from "@heroui/react";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useCase } from "../context/CaseContext";
@@ -133,7 +133,7 @@ export default function SummaryPage() {
           <Card className="p-6 text-center bg-white border border-border shadow-sm">
             <h2 className="text-xl font-bold text-danger mb-4">Error</h2>
             <p className="text-muted mb-4">{error || "Unable to generate summary"}</p>
-            <Button variant="solid" onPress={handleNewCase} className="bg-teal text-white hover:bg-teal/90">
+            <Button variant="primary" onPress={handleNewCase} className="bg-teal text-white hover:bg-teal/90">
               Start New Case
             </Button>
           </Card>
@@ -158,14 +158,14 @@ export default function SummaryPage() {
           </div>
           <div className="flex gap-2">
             <Button 
-              variant="bordered" 
+              variant="outline" 
               onPress={handleExportPDF}
               className="border-border text-foreground hover:border-teal hover:text-teal hover:bg-teal-light/30 transition-colors no-print"
             >
               Export PDF
             </Button>
             <Button 
-              variant="bordered" 
+              variant="outline" 
               onPress={handleNewCase} 
               className="border-border text-foreground hover:border-teal hover:text-teal hover:bg-teal-light/30 transition-colors no-print"
             >
@@ -202,7 +202,7 @@ export default function SummaryPage() {
               </div>
             </div>
 
-            <Divider className="my-4" />
+            <hr className="my-4 border-t border-border" />
 
             <div className="space-y-6">
               {/* Clinical Reasoning - numbered steps with teal numbers */}

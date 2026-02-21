@@ -81,6 +81,7 @@ def extract_numeric_values(text: str) -> list[dict[str, Any]]:
             "unit": match.group(0).replace(match.group(1), "").strip(),
             "context": context.strip(),
             "full_match": match.group(0),
+            "position": match.start(),
         })
     return values
 
@@ -109,6 +110,24 @@ def normalize_lab_name(name: str) -> str:
     return aliases.get(name, name)
 
 
+def normalize_unit(unit: str) -> str:
+    """Normalize lab units for comparison."""
+    return (
+        unit.lower()
+        .replace(" ", "")
+        .replace("×", "x")
+        .replace("μ", "u")
+        .replace("µ", "u")
+    )
+
+
+def _coerce_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def find_closest_lab(text: str, value_position: int) -> str | None:
     """
     Find the lab test name closest to a numeric value position.
@@ -119,16 +138,13 @@ def find_closest_lab(text: str, value_position: int) -> str | None:
     closest_distance = float('inf')
     
     for lab in COMMON_LAB_TESTS:
-        start = 0
-        while True:
-            pos = text_lower.find(lab, start)
-            if pos == -1:
-                break
+        pattern = re.compile(rf"\b{re.escape(lab)}\b", re.IGNORECASE)
+        for match in pattern.finditer(text_lower):
+            pos = match.start()
             distance = abs(pos - value_position)
             if distance < closest_distance:
                 closest_distance = distance
                 closest_lab = lab
-            start = pos + 1
     
     return normalize_lab_name(closest_lab) if closest_lab else None
 
@@ -160,10 +176,29 @@ def check_hallucination(
     
     extracted_values = extract_numeric_values(generated_text)
     provided_labs_normalized = {normalize_lab_name(k): k for k in provided_lab_values.keys()}
+
+    allowed_values: list[tuple[float, str]] = []
+    for lab_name, details in provided_lab_values.items():
+        if isinstance(details, dict):
+            value = _coerce_float(details.get("value"))
+            unit = details.get("unit")
+            if value is not None and unit:
+                allowed_values.append((value, normalize_unit(str(unit))))
+
+    if provided_patient_history:
+        for item in extract_numeric_values(provided_patient_history):
+            allowed_values.append((item["value"], normalize_unit(item["unit"])))
     
     for extracted in extracted_values:
-        context_start = max(0, generated_text.find(extracted["full_match"]) - 50)
-        value_position = generated_text.find(extracted["full_match"])
+        value_position = extracted["position"]
+        extracted_unit = normalize_unit(extracted["unit"])
+
+        is_allowed_value = any(
+            abs(allowed_value - extracted["value"]) < 1e-3 and allowed_unit == extracted_unit
+            for allowed_value, allowed_unit in allowed_values
+        )
+        if is_allowed_value:
+            continue
         
         closest_lab = find_closest_lab(generated_text, value_position)
         
