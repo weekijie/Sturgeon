@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-02-22] Session 17 — Systematic Review Corpus Expansion
+
+### Added
+- `ai-service/guidelines/systematic_reviews/pneumonia_antibiotics_sr.md`:
+  - CAP antibiotic effectiveness rankings (network meta-analysis)
+  - CURB-65 severity assessment scoring table
+  - Treatment recommendations by patient risk/setting
+  - Duration guidance and antimicrobial stewardship principles
+- `ai-service/guidelines/systematic_reviews/sepsis_qsofa_sr.md`:
+  - SOFA vs SIRS vs qSOFA mortality prediction comparison
+  - Complete scoring tables (SOFA, qSOFA, SIRS)
+  - Sensitivity/specificity pooled analysis
+  - Clinical integration strategy and timing recommendations
+
+### Changed
+- Corpus expanded: 12 guidelines + 3 systematic reviews (Guide-RAG GS-4 config)
+- All 3 demo cases (Melanoma, Pneumonia, Sepsis) now have matching guidelines + SRs
+
+---
+
 ## [2026-02-21] Session 16 — Documentation & Process Improvements
 ### Documentation
 #### Added
