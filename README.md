@@ -134,6 +134,8 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 <!-- GETTING STARTED -->
 ## Getting Started
 
+For production deployment (Modal + Vercel), see `DEPLOYMENT.md`.
+
 ### Prerequisites
 
 - **Node.js** 18+ 
@@ -247,6 +249,12 @@ npm run dev
    - Consensus diagnosis with confidence level
    - Full reasoning chain documented
    - Next steps and ruled-out conditions
+
+### Cold Start Note
+
+> **First load takes 2-3 minutes.** The AI runs on serverless GPU infrastructure to keep costs low. When the container is cold (after 10+ minutes of inactivity), the first request will take 2-3 minutes while the model loads. Subsequent requests are fast (~10-30 seconds).
+>
+> A warmup toast notification appears when the page loads to indicate AI status. Once you see "AI ready!", the system is warmed up and ready for use.
 
 ### API Example
 
