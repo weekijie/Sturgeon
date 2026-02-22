@@ -2,6 +2,260 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-02-22] Session 22 — Modal/Vercel Deployment Track Consolidation
+
+### Scope
+- Consolidated this full deployment-track session into the repo docs and changelog.
+- Captured Modal backend creation/evolution, parity restoration, reliability fixes, and frontend deployment UX adjustments.
+
+### Backend (modal_backend) — Consolidated Outcomes
+
+#### Added
+- `modal_backend/` production backend stack for Modal deployment:
+  - `app.py` (Modal class + ASGI endpoints + vLLM/MedSigLIP subprocess orchestration)
+  - `gemini_orchestrator_modal.py` (Gemini orchestration integrated with vLLM-hosted MedGemma)
+  - `rate_limiter.py`, `structured_logging.py`, `input_sanitization.py`
+  - `rag_retriever.py`, `rag_evaluation.py`, guideline corpus mirror
+- Endpoint parity additions vs local backend:
+  - `GET /rag-status`
+  - `POST /rag-evaluate`
+  - `POST /extract-labs-file`
+
+#### Changed
+- Cold-start and autoscaling controls:
+  - Kept `--enforce-eager`
+  - Added `max_containers=1`
+  - Frontend warmup switched to immediate ping + progressive backoff polling
+- vLLM reliability hardening across endpoints:
+  - Centralized non-200 handling for chat calls
+  - Auto-retry on `max_tokens` overflow with reduced budget
+  - Added input-overflow compaction retry for debate prompts
+- Debate/orchestrator hardening:
+  - Fixed `Event loop is closed` path by removing nested loop usage in modal orchestrator flow
+  - Restored RAG context injection in orchestrated synthesis prompts
+  - Added `rag_used` signal to distinguish retrieval usage from citation extraction
+- Citation trustworthiness:
+  - Citation URL normalization/filtering in backend
+  - Only valid `http(s)` citations are returned as linked references
+
+### Frontend — Consolidated Outcomes
+
+#### Added/Changed
+- Warmup UX:
+  - `frontend/lib/useWarmup.ts`: immediate first ping + 20s/30s/45s backoff + single in-flight guard
+  - `frontend/components/WarmupToast.tsx`: updated copy/behavior for backoff strategy
+  - `frontend/app/api/health/route.ts`: health proxy with `cache: "no-store"`
+- Debate citations UI:
+  - Link rendering now gated to valid `http(s)` URLs only
+  - Guideline section suppressed when no valid linked citations exist
+- Summary loading UI:
+  - Removed static spinner
+  - Kept larger pulsing loading text
+
+### Documentation
+
+#### Updated
+- `CHANGELOG.md`: Added Sessions 18-22 coverage for this deployment track.
+- `DEPLOYMENT.md`: Rewritten as current-state source of truth; removed stale/contradictory notes and aligned with runtime behavior (`max_containers=1`, `--enforce-eager`, overflow handling, citation URL gating).
+- `README.md`: Added pointer to `DEPLOYMENT.md` for production setup.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Deployment backend drifted from local `ai-service` behavior.
+   - **Why**: Initial Modal extraction prioritized getting a deployable service online quickly.
+   - **Resolution**: Reintroduced missing endpoints, orchestration behavior, retries, and response fields.
+   - **Lesson**: Use endpoint parity checks and behavior parity tests before deployment sign-off.
+
+2. **Problem**: vLLM context-limit failures appeared in both `max_tokens` and `input_tokens` forms.
+   - **Why**: Long accumulated debate context + high output budgets exceeded 4096 context in realistic turns.
+   - **Resolution**: Added adaptive token retries, prompt compaction, and constrained debate context assembly.
+   - **Lesson**: Budget full prompt context, not just latest user message.
+
+3. **Problem**: Citations were shown in UI without valid external links.
+   - **Why**: Empty/invalid citation URLs were still rendered as links.
+   - **Resolution**: Backend citation URL normalization + frontend URL gating.
+   - **Lesson**: Never present unverifiable citations as clickable references.
+
+## [2026-02-22] Session 21 — Citation URL Gating & Summary Loading UI Cleanup
+
+### Backend (modal_backend)
+
+#### Fixed
+- Added citation URL normalization/filtering in `modal_backend/app.py` for debate responses:
+  - Keeps only citations with valid absolute `http(s)` URLs
+  - Auto-fills URL from canonical source mapping when source is known but URL is missing
+  - Drops citations that cannot be mapped to a valid URL
+- Applied normalized citations in both debate paths:
+  - Orchestrated (`_debate_turn_orchestrated`)
+  - MedGemma fallback (`_debate_turn_medgemma_only`)
+- `has_guidelines` now reflects **valid linked citations only** (prevents badge/links for unlinked references)
+
+### Frontend
+
+#### Fixed
+- Debate citations rendering hardened in `frontend/app/debate/page.tsx`:
+  - Renders citation links only for valid `http(s)` URLs
+  - Suppresses guideline section if no valid links exist
+- Summary loading UI updated in `frontend/app/summary/page.tsx`:
+  - Removed static HeroUI spinner
+  - Kept pulsing summary-generation text and increased text prominence (`text-lg`/`text-xl` + semibold)
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Citation links in debate UI navigated to `https://sturgeon.vercel.app/debate` instead of guideline URLs.
+   - **Why**: Empty/invalid citation URLs were rendered as `<a href="">...` and treated as same-page links.
+   - **Resolution**: Added backend citation URL normalization and frontend URL validity gating before rendering links.
+   - **Lesson**: Citation display should be gated by verifiable URLs, not citation text presence alone.
+
+2. **Problem**: Summary loading spinner appeared as a static non-animated ring.
+   - **Why**: Spinner animation utility/class behavior was inconsistent in this runtime/theme setup.
+   - **Resolution**: Removed spinner and switched to larger pulsing loading text only.
+   - **Workaround**: Prefer CSS-controlled text animation for loading states when third-party spinner animations are inconsistent.
+
+## [2026-02-22] Session 20 — Debate Token Overflow, Orchestrator RAG, and Retry UX Fixes
+
+### Backend (modal_backend)
+
+#### Fixed
+- **Debate fallback input overflow handling** (`modal_backend/app.py`):
+  - Added prompt compaction path for `input_tokens` overflow errors (`parameter=input_tokens`) in vLLM wrapper.
+  - Added compact previous-round formatting (last 2 rounds, truncated text) to reduce prompt growth over long debates.
+  - Added compact patient history and image context in MedGemma fallback prompts.
+  - Limited RAG context injected into debate prompts to top 4 relevant chunks and trimmed context length.
+
+- **Orchestrator event-loop failure** (`modal_backend/gemini_orchestrator_modal.py`):
+  - Removed `asyncio.run(...)` call in orchestrator MedGemma query path.
+  - Switched orchestrator HTTP client from async client to sync client for thread-safe usage.
+  - Eliminated intermittent `Event loop is closed` fallback trigger.
+
+- **Orchestrator RAG prompt wiring restored** (`modal_backend/gemini_orchestrator_modal.py`):
+  - Added synthesis prompt builder that injects retrieved guideline context.
+  - Added explicit citation guidance with relevance rule: cite retrieved guidelines only when clinically applicable.
+  - Restored query formulation prompt using recent rounds for better focused MedGemma questions.
+
+- **Retry UX restoration** (`modal_backend/app.py`):
+  - MedGemma fallback hard failures now raise exceptions to route-level handler.
+  - `/debate-turn` now returns HTTP 500 on hard backend failure (instead of synthetic 200 "I encountered a processing error" response), enabling frontend error bubble + Retry button flow.
+
+#### Added
+- `rag_used` field in debate responses to differentiate:
+  - Retrieval/injection occurred (`rag_used=true`)
+  - Citation extraction succeeded (`has_guidelines=true`)
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Simple debate questions could fail with vLLM input overflow (`request has 5838 input tokens`).
+   - **Why**: Prompt assembly included cumulative long context (previous rounds + image context + RAG chunks), not just user question text.
+   - **Resolution**: Added prompt compaction and RAG context caps, plus overflow-specific retry behavior.
+   - **Lesson**: Debate systems must budget full prompt context, not only latest user input.
+
+2. **Problem**: Orchestrator intermittently failed with `Event loop is closed`, forcing fallback paths.
+   - **Why**: Async client + `asyncio.run(...)` usage inside threaded orchestration path caused loop lifecycle mismatch.
+   - **Resolution**: Switched to sync vLLM HTTP client in orchestrator and removed `asyncio.run(...)`.
+   - **Lesson**: Avoid creating nested event loop boundaries inside thread-executed orchestration code.
+
+## [2026-02-22] Session 19 — vLLM Token Budget Guardrails & Endpoint Hardening
+
+### Backend (modal_backend)
+
+#### Fixed
+- Added centralized vLLM call wrapper in `modal_backend/app.py` for all direct MedGemma chat calls:
+  - Validates non-200 responses before reading `choices`
+  - Prevents `'choices'` KeyError crashes when vLLM returns validation errors
+  - Detects max-token overflow errors and auto-retries with reduced token budget
+- Applied wrapper to all relevant endpoints and retry paths:
+  - `/extract-labs`
+  - `/extract-labs-file` (including JSON parse retry call)
+  - `/differential` (including hallucination-correction retry call)
+  - `/debate-turn` MedGemma fallback (including correction retry call)
+  - `/analyze-image` (primary + refusal retry)
+  - `/summary`
+- Hardened orchestrated debate MedGemma tool call in `modal_backend/gemini_orchestrator_modal.py`:
+  - Added the same overflow-aware retry behavior for `query_medgemma()`
+  - Prevents hidden failures when orchestrator context gets long
+
+#### Performance
+- Reduced `/analyze-image` generation output budget:
+  - Primary MedGemma image analysis: 2048 -> 768 max tokens
+  - Refusal-retry analysis: 2048 -> 512 max tokens
+- Added image downscaling before vLLM multimodal request when input is very large (`max side = 1024`) to reduce image token cost and latency.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: `/differential` returned 500 when vLLM rejected `max_tokens=3072` for long prompts.
+   - **Why**: vLLM enforces context budget (`input_tokens + max_tokens <= max_model_len`), and the endpoint read `response.json()["choices"]` even on non-200 errors.
+   - **Resolution**: Added centralized vLLM response/error handling + overflow-aware retry with reduced max tokens.
+   - **Lesson**: Keep high desired output caps for JSON completeness, but enforce adaptive per-request token budgeting.
+
+2. **Problem**: `/analyze-image` latency spiked (~1m+).
+   - **Why**: High output token budget and large multimodal input increased generation/prefill cost.
+   - **Resolution**: Reduced output budgets and downscaled large images before MedGemma call.
+   - **Workaround**: Maintain concise output format for first-pass image analysis; reserve deeper analysis for follow-up turns.
+
+## [2026-02-22] Session 18 — Modal Backend Parity Restoration
+
+### Backend (modal_backend)
+
+#### Restored
+- Endpoint parity with local backend in `modal_backend/app.py`:
+  - Added `GET /rag-status`
+  - Added `POST /rag-evaluate`
+  - Added `POST /extract-labs-file`
+- Re-enabled Gemini orchestrated debate path with session state:
+  - `debate-turn` now uses orchestrator when available, with MedGemma fallback
+  - Restored `orchestrated`, `session_id`, `citations`, and `has_guidelines` response behavior
+- Restored hallucination correction retries:
+  - Differential endpoint now retries with correction constraints on detected fabrication
+  - Debate fallback now retries corrected JSON when hallucinations are detected
+- Restored token limits to local parity:
+  - Differential `max_tokens`: 2048 -> 3072
+  - Summary `max_tokens`: 2048 -> 3072
+- Restored image refusal handling:
+  - Added `is_pure_refusal()` retry path
+  - Added `strip_refusal_preamble()` cleanup
+- Restored lab file parsing flow (`.pdf` + `.txt`) with retry-on-JSON-parse-failure behavior
+- Added `modal_backend/rag_evaluation.py` to support `/rag-evaluate` in Modal deployment
+
+#### Reliability/Scaling
+- Kept `max_containers=1` in `@app.cls(...)` to prevent duplicate cold-start containers.
+
+### Frontend
+
+#### Changed
+- Warmup polling behavior (`frontend/lib/useWarmup.ts`):
+  - Immediate first health ping
+  - Progressive backoff polling (20s -> 30s -> 45s)
+  - Single in-flight guard to avoid overlapping health checks
+- Warmup toast copy updated to match backoff strategy (`frontend/components/WarmupToast.tsx`)
+- Health proxy route uses `cache: "no-store"` (`frontend/app/api/health/route.ts`)
+
+### Documentation
+
+#### Updated
+- `DEPLOYMENT.md` synced with current implementation:
+  - Added `max_containers=1` rationale/config snippet
+  - Replaced stale "60s warmup delay" docs with immediate ping + backoff strategy
+  - Fixed stale CORS note (`allow_origins=["*"]` -> restricted origins)
+  - Corrected stale `scaledown_window` note (300s -> 600s)
+  - Added missing endpoint references (`/extract-labs-file`, `/rag-status`, `/rag-evaluate`)
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Modal backend had feature drift from `ai-service` (missing endpoints + orchestrated path disabled).
+   - **Why**: Initial Modal port prioritized deployment simplicity and omitted some local behaviors.
+   - **Resolution**: Reintroduced missing endpoints and restored orchestration/fallback parity in `modal_backend/app.py`.
+   - **Lesson**: Keep endpoint parity checks (`grep @app.post/@app.get`) as part of deployment readiness.
+
+2. **Problem**: Cold-start health checks could trigger container fan-out.
+   - **Why**: Repeated health probes during long model startup can be interpreted as scale demand.
+   - **Resolution**: Combined backend cap (`max_containers=1`) with frontend immediate+backoff warmup polling.
+   - **Lesson**: Use both platform autoscaling controls and client polling discipline together.
+
+3. **Problem**: Frontend lint rule (`react-hooks/set-state-in-effect`) failed on warmup toast state updates.
+   - **Why**: Synchronous `setState` calls inside `useEffect` are disallowed by the current lint config.
+   - **Resolution**: Simplified toast visibility logic to avoid effect-driven synchronous state updates.
+   - **Workaround**: Keep transient ready-state UX simple unless introducing a reducer/timer-driven state machine.
+
 ## [2026-02-22] Session 17 — Systematic Review Corpus Expansion
 
 ### Added
