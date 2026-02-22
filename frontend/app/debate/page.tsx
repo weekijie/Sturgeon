@@ -511,20 +511,29 @@ export default function DebatePage() {
                       <Prose content={msg.content} />
                       
                       {/* RAG: Guideline badge and citations */}
-                      {msg.has_guidelines && msg.citations && msg.citations.length > 0 && (
+                      {msg.has_guidelines && msg.citations && msg.citations.filter((c) => (c.url || "").startsWith("https://") || (c.url || "").startsWith("http://")).length > 0 && (
                         <div className="mt-3 pt-3 border-t border-teal/20">
                           <GuidelineBadge hasGuidelines={msg.has_guidelines} />
                           <div className="mt-2 space-y-1">
                             {msg.citations.map((citation, i) => (
-                              <a
-                                key={i}
-                                href={citation.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-teal-600 hover:text-teal-800 underline block"
-                              >
-                                {citation.text}
-                              </a>
+                              (() => {
+                                const url = (citation.url || "").trim();
+                                const isValidUrl = url.startsWith("https://") || url.startsWith("http://");
+
+                                if (!isValidUrl) return null;
+
+                                return (
+                                  <a
+                                    key={i}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-teal-600 hover:text-teal-800 underline block"
+                                  >
+                                    {citation.text}
+                                  </a>
+                                );
+                              })()
                             ))}
                           </div>
                         </div>

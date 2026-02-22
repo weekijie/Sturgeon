@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Button, Spinner } from "@heroui/react";
+import { Card, Button } from "@heroui/react";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useCase } from "../context/CaseContext";
@@ -115,9 +115,10 @@ export default function SummaryPage() {
   if (isLoading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-white">
-        <div className="text-center space-y-4">
-          <Spinner size="lg" />
-          <p className="text-muted animate-pulse">MedGemma is generating your diagnostic summary...</p>
+        <div className="text-center space-y-2 px-6">
+          <p className="text-lg md:text-xl font-semibold text-muted animate-pulse">
+            MedGemma is generating your diagnostic summary...
+          </p>
         </div>
       </main>
     );

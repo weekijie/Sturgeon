@@ -6,6 +6,8 @@ import { Card, Button, Chip } from "@heroui/react";
 import { useCase, ImageAnalysis, LabResults } from "./context/CaseContext";
 import Prose from "../components/Prose";
 import { RateLimitStatus, parseRateLimitHeaders, isRateLimitError } from "../components/RateLimitUI";
+import { WarmupToast } from "../components/WarmupToast";
+import { useWarmup } from "../lib/useWarmup";
 import { demoCases, loadDemoImage, DemoCase } from "../lib/demo-cases";
 
 // Helper: is the file an image?
@@ -78,6 +80,8 @@ export default function UploadPage() {
     setLabResults,
     resetCase,
   } = useCase();
+
+  const { status: warmupStatus } = useWarmup(true);
 
   // Multi-file state: separate slots for image and lab report
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -354,7 +358,9 @@ export default function UploadPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6 pt-8">
+    <>
+      <WarmupToast status={warmupStatus} />
+      <main className="min-h-screen flex items-center justify-center p-6 pt-8">
       <div className="w-full max-w-2xl space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
@@ -793,5 +799,6 @@ export default function UploadPage() {
         </p>
       </div>
     </main>
+    </>
   );
 }
