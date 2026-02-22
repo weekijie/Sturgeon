@@ -269,6 +269,9 @@ Before suggesting or implementing any new external tool, library, or API:
 - [x] **Image context in debate** — MedGemma summary included for richer context
 - [x] **API header unification** — Consistent rate-limit passthrough across routes
 - [x] **Logo and branding** — Added SVG logo for README
+- [x] **Pneumonia systematic review** — CAP antibiotic network meta-analysis, CURB-65 scoring (JGIM 2024)
+- [x] **Sepsis systematic review** — SOFA/qSOFA/SIRS mortality prediction comparison (Arch Iran Med 2024)
+- [x] **Guide-RAG GS-4 config complete** — 12 guidelines + 3 systematic reviews (all demo cases covered)
 
 ### Next Steps (Priority Order)
 
@@ -300,6 +303,8 @@ See `CHANGELOG.md` for all code changes.
 **Feb 16, 2026**: Hallucination prevention system. New `hallucination_check.py` module detects fabricated lab values. Integrated validation into `/differential` and `/debate-turn` endpoints with auto-retry. Added prompt guardrails removing hardcoded example values (8.2 g/dL hemoglobin). Fixed frontend state reset on new case. Added academic references (CHECK, HALO, Guide-RAG, Mayo Reverse RAG). 133 tests passing.
 
 **Feb 21, 2026**: Hallucination hardening + HeroUI v3 upgrade. Backend: removed hardcoded ferritin from prompts, fixed MedGemma CPU precision (float32), MedSigLIP eval mode, improved hallucination detection (position/unit tracking), added session cap/CORS trim/RAG eval guard/PHI redaction, fixed AAD citation mapping. Frontend: wired demo labs, fixed reset after validation, simplified rate-limit UI, added MedGemma summary to image_context, unified API headers, upgraded to HeroUI v3 (fixed all component APIs), added logo. 156 tests passing.
+
+**Feb 22, 2026**: Systematic review corpus expansion. Added `pneumonia_antibiotics_sr.md` (CAP antibiotic network meta-analysis, CURB-65, treatment recommendations — JGIM 2024) and `sepsis_qsofa_sr.md` (SOFA/qSOFA/SIRS mortality prediction comparison, scoring tables — Arch Iran Med 2024). Corpus: 12 guidelines + 3 systematic reviews. Guide-RAG GS-4 config complete for all 3 demo cases (Melanoma, Pneumonia, Sepsis).
 
 ---
 
