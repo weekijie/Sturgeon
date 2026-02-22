@@ -1,15 +1,16 @@
 # Modal deployment requirements
 # These are installed via modal.Image.uv_pip_install() in app.py
+# This file is for REFERENCE ONLY - actual versions defined in app.py
 
 # Core
-vllm==0.6.6
+vllm>=0.11.0              # Note: >=0.11.0 required for Gemma 3 (MedGemma 1.5)
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 
 # AI/ML
 google-genai>=1.0.0
-transformers>=4.47.0
+transformers>=4.50.0      # Note: >=4.50.0 for MedGemma
 torch>=2.5.0
 
 # RAG
@@ -23,3 +24,6 @@ Pillow>=10.0.0
 pdfplumber>=0.11.0
 httpx
 pyyaml>=6.0.0
+
+# Performance
+hf_transfer              # Fast model downloads

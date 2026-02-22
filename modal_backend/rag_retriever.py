@@ -425,7 +425,8 @@ class GuidelineRetriever:
         file_count = 0
         chunk_count = 0
         
-        for md_file in self.guidelines_dir.glob("*.md"):
+        # Use rglob to recursively find all .md files in subdirectories
+        for md_file in self.guidelines_dir.rglob("*.md"):
             file_count += 1
             logger.info(f"Processing: {md_file.name}")
             

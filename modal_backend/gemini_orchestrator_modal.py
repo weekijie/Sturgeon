@@ -8,7 +8,6 @@ import os
 import json
 import logging
 import re
-import asyncio
 from dataclasses import dataclass, field, asdict
 from typing import Optional, List, Dict, Tuple
 
@@ -249,7 +248,7 @@ class GeminiOrchestrator:
     def __init__(self):
         self.client = None
         self.vllm_base_url = "http://localhost:6501"
-        self.http_client = httpx.AsyncClient(timeout=120.0)
+        self.http_client = httpx.Client(timeout=120.0)
         self._model_name = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
     
     def initialize(self, api_key: str = None):
@@ -264,39 +263,142 @@ class GeminiOrchestrator:
             http_options=types.HttpOptions(timeout=timeout_ms)
         )
         logger.info(f"Gemini orchestrator initialized: {self._model_name}")
+
+    @staticmethod
+    def _extract_vllm_error_message(response_payload: object, raw_text: str) -> str:
+        if isinstance(response_payload, dict):
+            error = response_payload.get("error")
+            if isinstance(error, dict):
+                return str(error.get("message") or error.get("type") or error)
+            if error:
+                return str(error)
+
+            detail = response_payload.get("detail")
+            if detail:
+                return str(detail)
+
+        return raw_text[:1000] if raw_text else "Unknown vLLM error"
+
+    @staticmethod
+    def _infer_retry_max_tokens(error_message: str, requested_max_tokens: int) -> Optional[int]:
+        if "max_tokens" not in error_message and "max_completion_tokens" not in error_message:
+            return None
+
+        max_len = None
+        input_tokens = None
+
+        expression_match = re.search(r"\((\d+)\s*>\s*(\d+)\s*-\s*(\d+)\)", error_message)
+        if expression_match:
+            max_len = int(expression_match.group(2))
+            input_tokens = int(expression_match.group(3))
+        else:
+            max_len_match = re.search(r"maximum context length is\s*(\d+)", error_message, re.IGNORECASE)
+            input_match = re.search(r"request has\s*(\d+)\s*input tokens", error_message, re.IGNORECASE)
+            if max_len_match and input_match:
+                max_len = int(max_len_match.group(1))
+                input_tokens = int(input_match.group(1))
+
+        if max_len is None or input_tokens is None:
+            return None
+
+        safe_margin = 32
+        retry_max_tokens = max(128, max_len - input_tokens - safe_margin)
+        if retry_max_tokens >= requested_max_tokens:
+            return None
+        return retry_max_tokens
+
+    @staticmethod
+    def _truncate_text(text: str, max_chars: int) -> str:
+        if len(text) <= max_chars:
+            return text
+        head = int(max_chars * 0.7)
+        tail = max_chars - head - 32
+        return text[:head] + "\n...[truncated for token budget]...\n" + text[-tail:]
+
+    @staticmethod
+    def _is_input_overflow_error(error_message: str) -> bool:
+        return (
+            "parameter=input_tokens" in error_message
+            or ("maximum context length" in error_message and "input tokens" in error_message)
+        )
     
-    async def query_medgemma(self, question: str, clinical_context: str) -> str:
+    def query_medgemma(self, question: str, clinical_context: str) -> str:
         """Send question to MedGemma via vLLM."""
         system_prompt = (
             "You are a medical specialist AI. Answer the following clinical "
             "question precisely and concisely. Cite specific evidence."
         )
-        
-        full_prompt = f"""Clinical Context:
-{clinical_context}
+
+        compact_context = clinical_context
+        compact_question = self._truncate_text(question, 400)
+
+        def _build_messages(context: str) -> list[dict]:
+            full_prompt = f"""Clinical Context:
+{context}
 
 Question:
-{question}
+{compact_question}
 
 Provide a focused, evidence-based analysis."""
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": full_prompt}
-        ]
-        
-        response = await self.http_client.post(
-            f"{self.vllm_base_url}/v1/chat/completions",
-            json={
-                "model": "google/medgemma-1.5-4b-it",
-                "messages": messages,
-                "max_tokens": 2048,
-                "temperature": 0.4,
-            }
-        )
-        
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
+            return [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": full_prompt},
+            ]
+
+        messages = _build_messages(compact_context)
+
+        requested_max_tokens = 2048
+        last_error = "Unknown vLLM error"
+        compacted_for_input_overflow = False
+
+        for attempt in range(2):
+            response = self.http_client.post(
+                f"{self.vllm_base_url}/v1/chat/completions",
+                json={
+                    "model": "google/medgemma-1.5-4b-it",
+                    "messages": messages,
+                    "max_tokens": requested_max_tokens,
+                    "temperature": 0.4,
+                },
+            )
+
+            raw_text = response.text
+            try:
+                result = response.json()
+            except Exception:
+                result = None
+
+            if response.status_code == 200 and isinstance(result, dict):
+                choices = result.get("choices")
+                if isinstance(choices, list) and choices:
+                    content = choices[0].get("message", {}).get("content")
+                    if isinstance(content, str):
+                        return content
+
+            error_message = self._extract_vllm_error_message(result, raw_text)
+            last_error = f"{response.status_code}: {error_message}"
+            retry_max_tokens = self._infer_retry_max_tokens(error_message, requested_max_tokens)
+
+            if retry_max_tokens and attempt == 0:
+                logger.warning(
+                    "Orchestrator MedGemma query exceeded token budget; retrying (%s -> %s)",
+                    requested_max_tokens,
+                    retry_max_tokens,
+                )
+                requested_max_tokens = retry_max_tokens
+                continue
+
+            if self._is_input_overflow_error(error_message) and attempt == 0 and not compacted_for_input_overflow:
+                compact_context = self._truncate_text(compact_context, 1800)
+                messages = _build_messages(compact_context)
+                requested_max_tokens = min(requested_max_tokens, 1024)
+                compacted_for_input_overflow = True
+                logger.warning("Orchestrator MedGemma query input too long; retrying with compacted context")
+                continue
+
+            break
+
+        raise RuntimeError(f"MedGemma query failed: {last_error}")
     
     def process_debate_turn(
         self,
@@ -308,19 +410,11 @@ Provide a focused, evidence-based analysis."""
         """Process debate turn via Gemini orchestration."""
         if self.client is None:
             raise RuntimeError("Orchestrator not initialized.")
-        
+
         clinical_state.debate_round += 1
         state_summary = clinical_state.to_summary()
-        
-        query_prompt = f"""You are formulating a question for your medical specialist AI (MedGemma).
+        query_prompt = self._build_query_formulation_prompt(user_challenge, state_summary, previous_rounds)
 
-{state_summary}
-
-The clinician just said: "{user_challenge}"
-
-Based on this, formulate a SINGLE, FOCUSED medical question for MedGemma.
-Respond with ONLY the question, nothing else."""
-        
         query_response = self.client.models.generate_content(
             model=self._model_name,
             contents=query_prompt,
@@ -330,25 +424,20 @@ Respond with ONLY the question, nothing else."""
                 max_output_tokens=512,
             ),
         )
-        
+
         medgemma_question = query_response.text.strip()
-        logger.info(f"MedGemma question: {medgemma_question[:100]}...")
-        
-        medgemma_analysis = asyncio.run(
-            self.query_medgemma(medgemma_question, state_summary)
+        logger.info(f"MedGemma question: {medgemma_question[:150]}...")
+
+        medgemma_analysis = self.query_medgemma(medgemma_question, state_summary)
+        synthesis_prompt = self._build_synthesis_prompt(
+            user_challenge=user_challenge,
+            state_summary=state_summary,
+            medgemma_question=medgemma_question,
+            medgemma_analysis=medgemma_analysis,
+            previous_rounds=previous_rounds,
+            retrieved_context=retrieved_context,
         )
-        
-        synthesis_prompt = f"""{state_summary}
 
-The clinician challenged: "{user_challenge}"
-
-You asked your medical specialist: "{medgemma_question}"
-
-MedGemma's analysis:
-{medgemma_analysis}
-
-Now synthesize this into your response. Return valid JSON."""
-        
         synthesis_response = self.client.models.generate_content(
             model=self._model_name,
             contents=synthesis_prompt,
@@ -359,20 +448,121 @@ Now synthesize this into your response. Return valid JSON."""
                 response_mime_type="application/json",
             ),
         )
-        
+
         result = self._parse_response(synthesis_response.text)
-        
+
         _, citations = extract_citations(result.get("ai_response", ""))
         result["citations"] = citations
         result["has_guidelines"] = len(citations) > 0
-        
+        result["rag_used"] = bool(retrieved_context)
+
         if result.get("updated_differential"):
             clinical_state.differential = result["updated_differential"]
-        
+
         return result
-    
+
+    def _build_query_formulation_prompt(
+        self,
+        user_challenge: str,
+        state_summary: str,
+        previous_rounds: list[dict] = None,
+    ) -> str:
+        recent_context = ""
+        if previous_rounds:
+            recent = previous_rounds[-2:]
+            parts = []
+            for round_data in recent:
+                challenge = round_data.get("user_challenge", round_data.get("challenge", ""))
+                response = round_data.get("ai_response", round_data.get("response", ""))
+                parts.append(f"User: {str(challenge)[:200]}\nAI: {str(response)[:220]}")
+            recent_context = "\nRecent conversation:\n" + "\n".join(parts)
+
+        return f"""You are formulating a question for your medical specialist AI (MedGemma).
+
+{state_summary}
+{recent_context}
+
+The clinician just said: "{user_challenge}"
+
+Based on this challenge, formulate a SINGLE, FOCUSED medical question for MedGemma to analyze.
+The question should:
+- Address the specific clinical concern raised by the user
+- Reference relevant evidence from the case
+- Be answerable from the clinical data available
+- Help determine whether the differential should be updated
+
+Respond with ONLY the question, nothing else."""
+
+    def _build_synthesis_prompt(
+        self,
+        user_challenge: str,
+        state_summary: str,
+        medgemma_question: str,
+        medgemma_analysis: str,
+        previous_rounds: list[dict] = None,
+        retrieved_context: str = "",
+    ) -> str:
+        recent_context = ""
+        if previous_rounds:
+            recent = previous_rounds[-2:]
+            parts = []
+            for round_data in recent:
+                challenge = round_data.get("user_challenge", round_data.get("challenge", ""))
+                response = round_data.get("ai_response", round_data.get("response", ""))
+                parts.append(f"User: {str(challenge)[:240]}\nAI: {str(response)[:280]}")
+            recent_context = "\nRecent conversation:\n" + "\n".join(parts)
+
+        rag_section = ""
+        citation_instruction = ""
+        if retrieved_context:
+            rag_section = f"""
+
+RETRIEVED EVIDENCE-BASED GUIDELINES:
+{retrieved_context}
+
+Only use the retrieved guidelines above if they are clinically relevant to this challenge.
+Do not cite any guideline that is not present in the retrieved section.
+"""
+            citation_instruction = """3. If guideline evidence is relevant, cite it inline with one of these formats:
+   - (CDC Hospital Sepsis Program Core Elements, 2025)
+   - (CDC Respiratory Virus Guidance, 2025)
+   - (CDC Clinical Guidance for Legionella, 2025)
+   - (PMC Guidelines for Pneumonia Evaluation, 2018)
+   - (USPSTF Breast Cancer Screening Guidelines, 2024)
+   - (USPSTF Colorectal Cancer Screening Guidelines, 2021)
+   - (USPSTF Diabetes Screening Guidelines, 2021)
+   - (USPSTF Statin Use Guidelines, 2022)
+   - (WHO Meningitis Guidelines, 2025)
+   - (WHO TB Prevention Guidelines, 2024)
+   - (WHO Hepatitis B Guidelines, 2024)
+   - (AAD Melanoma Guidelines, 2018)
+
+   If no retrieved guideline is relevant, do not include citations."""
+        else:
+            citation_instruction = """3. Do not cite guidelines in this response because none were retrieved for this turn."""
+
+        return f"""{state_summary}
+{recent_context}
+
+The clinician challenged: "{user_challenge}"
+
+You asked your medical specialist: "{medgemma_question}"
+
+MedGemma's analysis:
+{medgemma_analysis}
+{rag_section}
+
+Now synthesize this into your response. You must:
+1. Address the user's challenge directly and conversationally
+2. Incorporate MedGemma's analysis with specific evidence
+{citation_instruction}
+4. Update the differential if warranted by the analysis
+5. Suggest a focused next test if it would clarify uncertainty
+
+CRITICAL: The "ai_response" field must be plain conversational text, not nested JSON."""
+
     def _parse_response(self, text: str) -> dict:
-        """Parse Gemini JSON response."""
+        """Parse Gemini JSON response with fallback handling."""
         json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
         if json_match:
             text = json_match.group(1)
@@ -381,15 +571,60 @@ Now synthesize this into your response. Return valid JSON."""
         end = text.rfind('}')
         if start != -1 and end != -1:
             text = text[start:end + 1]
-        
+
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return {
-                "ai_response": text[:500],
-                "updated_differential": [],
-                "suggested_test": None,
-            }
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            try:
+                fixed_text = re.sub(r'"\s*\n\s*"', '",\n"', text)
+                data = json.loads(fixed_text)
+            except json.JSONDecodeError:
+                logger.warning("Gemini JSON parse failed: %s", e)
+                ai_match = re.search(r'"ai_response"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)', text, re.DOTALL)
+                if ai_match:
+                    extracted = ai_match.group(1)
+                    extracted = extracted.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\')
+                    data = {
+                        "ai_response": extracted,
+                        "updated_differential": [],
+                        "suggested_test": None,
+                    }
+                else:
+                    data = {
+                        "ai_response": text[:500] if text else "I need to reconsider this case.",
+                        "updated_differential": [],
+                        "suggested_test": None,
+                    }
+
+        ai_response = data.get("ai_response", "")
+        if isinstance(ai_response, str) and ai_response.strip().startswith("{"):
+            try:
+                inner = json.loads(ai_response)
+                if isinstance(inner, dict) and "ai_response" in inner:
+                    data.update(inner)
+            except (json.JSONDecodeError, TypeError):
+                stripped = re.sub(r'^\s*\{\s*"ai_response"\s*:\s*"?', '', ai_response)
+                stripped = re.sub(r'"\s*,?\s*"(updated_differential|suggested_test|medgemma_query).*$', '', stripped)
+                stripped = stripped.rstrip('"}{ \n')
+                if stripped:
+                    data["ai_response"] = stripped
+
+        if isinstance(data.get("ai_response"), dict):
+            inner = data["ai_response"]
+            data["ai_response"] = inner.get("ai_response", json.dumps(inner))
+
+        final = data.get("ai_response", "")
+        if isinstance(final, str):
+            prefix_match = re.match(r'^\s*\{\s*"ai_response"\s*:\s*"?(.*)$', final, re.DOTALL)
+            if prefix_match:
+                data["ai_response"] = prefix_match.group(1).rstrip('"}')
+
+        if "updated_differential" not in data:
+            data["updated_differential"] = []
+        if "suggested_test" not in data:
+            data["suggested_test"] = None
+
+        return data
 
 
 _orchestrator_instance: Optional[GeminiOrchestrator] = None
