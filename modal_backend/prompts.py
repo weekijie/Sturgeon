@@ -66,6 +66,11 @@ Before generating diagnoses, think step by step:
 3. What conditions explain only SOME findings (and which findings argue against them)?
 
 Then provide your differential in this EXACT JSON format. Keep evidence phrases SHORT (under 15 words each).
+Output limits for speed and JSON stability:
+- Return exactly 3 diagnoses when possible (max 4 only if truly necessary)
+- supporting_evidence: max 3 items per diagnosis
+- against_evidence: max 2 items per diagnosis
+- suggested_tests: max 2 items per diagnosis
 Return ONLY valid JSON, no extra text.
 
 Example format (use YOUR case findings, not these):
@@ -225,6 +230,11 @@ Provide:
 2. The reasoning chain that led to this conclusion (cite specific evidence from case)
 3. What was ruled out and why
 4. Recommended next steps
+
+Output limits for speed and JSON stability:
+- reasoning_chain: 4-6 concise items (under 20 words each)
+- ruled_out: max 3 items
+- next_steps: max 4 items
 
 Rate confidence as "high" (>85% certainty), "medium" (50-85%), or "low" (<50%).
 Also provide a confidence_percent (integer 0-100) based on:

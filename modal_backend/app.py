@@ -15,19 +15,40 @@ Features:
 All running in a single Modal container with shared GPU.
 """
 import modal
+import os
 
 MODEL_CACHE_DIR = "/root/.cache/huggingface"
+VLLM_CACHE_DIR = "/root/.cache/vllm"
 CHROMA_DB_DIR = "/root/chroma_db"
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+ENABLE_MEMORY_SNAPSHOT = _env_bool("ENABLE_MEMORY_SNAPSHOT", True)
+ENABLE_GPU_SNAPSHOT = _env_bool("ENABLE_GPU_SNAPSHOT", False)
+GPU_SNAPSHOT_OPTIONS = {"enable_gpu_snapshot": True} if ENABLE_GPU_SNAPSHOT else {}
+MODAL_MAX_CONTAINERS = max(1, int(os.getenv("MODAL_MAX_CONTAINERS", "1")))
+MODAL_MAX_INPUTS = max(1, int(os.getenv("MODAL_MAX_INPUTS", "8")))
+MODAL_TARGET_INPUTS = min(
+    MODAL_MAX_INPUTS,
+    max(1, int(os.getenv("MODAL_TARGET_INPUTS", "4"))),
+)
 
 base_image = (
     modal.Image.from_registry("nvidia/cuda:12.4.0-devel-ubuntu22.04", add_python="3.11")
     .entrypoint([])
     .uv_pip_install(
-        "vllm>=0.11.0",
+        "vllm>=0.13.0",
         "fastapi>=0.115.0",
         "uvicorn[standard]>=0.32.0",
         "python-multipart>=0.0.12",
         "google-genai>=1.0.0",
+        "huggingface-hub>=0.36.0",
         "pydantic>=2.0.0",
         "python-dotenv>=1.0.0",
         "Pillow>=10.0.0",
@@ -42,12 +63,14 @@ base_image = (
     )
     .env({
         "HF_HUB_ENABLE_HF_TRANSFER": "1",
-        "TRANSFORMERS_CACHE": MODEL_CACHE_DIR,
+        "HF_XET_HIGH_PERFORMANCE": "1",
+        "HF_HOME": MODEL_CACHE_DIR,
     })
     .add_local_dir(".", "/root")
 )
 
 model_cache = modal.Volume.from_name("medgemma-cache", create_if_missing=True)
+vllm_cache = modal.Volume.from_name("vllm-cache", create_if_missing=True)
 chroma_db = modal.Volume.from_name("chroma-db", create_if_missing=True)
 gemini_secret = modal.Secret.from_name("gemini-api-key")
 hf_secret = modal.Secret.from_name("huggingface-token")
@@ -64,36 +87,59 @@ MEDSIGLIP_PORT = 6502
     gpu="L4",
     volumes={
         MODEL_CACHE_DIR: model_cache,
+        VLLM_CACHE_DIR: vllm_cache,
         CHROMA_DB_DIR: chroma_db,
     },
     secrets=[gemini_secret, hf_secret],
     timeout=600,
-    scaledown_window=600,
+    scaledown_window=300,
     memory=16384,
     cpu=4,
-    max_containers=1,
+    max_containers=MODAL_MAX_CONTAINERS,
+    enable_memory_snapshot=ENABLE_MEMORY_SNAPSHOT,
+    experimental_options=GPU_SNAPSHOT_OPTIONS,
 )
+@modal.concurrent(max_inputs=MODAL_MAX_INPUTS, target_inputs=MODAL_TARGET_INPUTS)
 class SturgeonService:
     """Modal class hosting vLLM, MedSigLIP, and FastAPI ASGI app."""
     
-    @modal.enter()
-    def start_servers(self):
-        """Start vLLM and MedSigLIP servers on container startup."""
-        import subprocess
-        import time
-        import httpx
-        import os
+    def _init_runtime_state(self):
+        """Initialize logging and process-local state."""
         import sys
-        
+        from collections import OrderedDict
+
         sys.path.insert(0, "/root")
-        
+
         from structured_logging import setup_logging, StructuredLogger, set_request_id
         setup_logging()
         self.logger = StructuredLogger(__name__)
-        
+
         self.set_request_id = set_request_id
         self.sessions = {}
         self.max_sessions = int(os.getenv("MAX_SESSIONS", "500"))
+        self.rag_query_cache = OrderedDict()
+        self.rag_cache_ttl_seconds = int(os.getenv("RAG_CACHE_TTL_SECONDS", "900"))
+        self.rag_cache_max_entries = int(os.getenv("RAG_CACHE_MAX_ENTRIES", "256"))
+        self.rag_cache_hits = 0
+        self.rag_cache_misses = 0
+        self._servers_started = False
+
+    def _start_servers_if_needed(self):
+        """Start vLLM and MedSigLIP servers if not already running."""
+        import subprocess
+        import time
+        import httpx
+        import sys
+
+        if getattr(self, "_servers_started", False):
+            vllm_running = hasattr(self, "vllm_proc") and self.vllm_proc.poll() is None
+            medsiglip_running = hasattr(self, "medsiglip_proc") and self.medsiglip_proc.poll() is None
+            if vllm_running and medsiglip_running:
+                self.logger.info("Inference servers already running")
+                return
+            self.logger.warning("Server marker set but process exited; restarting servers")
+
+        sys.path.insert(0, "/root")
         
         self.logger.info("Starting vLLM server...")
         env = os.environ.copy()
@@ -131,10 +177,50 @@ class SturgeonService:
             time.sleep(2)
         else:
             self.logger.error("Servers failed to start in time")
-        
+
         self._init_clients()
         self._init_rag()
         self._init_gemini()
+        self._servers_started = True
+
+    def _refresh_after_snapshot_restore(self):
+        """Refresh network clients and dependencies after snapshot restore."""
+        vllm_running = hasattr(self, "vllm_proc") and self.vllm_proc.poll() is None
+        medsiglip_running = hasattr(self, "medsiglip_proc") and self.medsiglip_proc.poll() is None
+
+        if not (vllm_running and medsiglip_running):
+            self.logger.warning("Snapshot restore without healthy child processes; restarting")
+            self._start_servers_if_needed()
+            return
+
+        self._init_clients()
+        self._init_rag()
+        self._init_gemini()
+
+    @modal.enter(snap=True)
+    def snapshot_init(self):
+        """Pre-snapshot init. In GPU snapshot mode, also pre-start inference stack."""
+        self._init_runtime_state()
+        self.logger.info(
+            "Snapshot init",
+            enable_memory_snapshot=ENABLE_MEMORY_SNAPSHOT,
+            enable_gpu_snapshot=ENABLE_GPU_SNAPSHOT,
+            max_containers=MODAL_MAX_CONTAINERS,
+            max_inputs=MODAL_MAX_INPUTS,
+            target_inputs=MODAL_TARGET_INPUTS,
+        )
+        if ENABLE_GPU_SNAPSHOT:
+            self.logger.info("GPU snapshot mode enabled: pre-starting inference stack")
+            self._start_servers_if_needed()
+
+    @modal.enter(snap=False)
+    def start_servers(self):
+        """Post-restore init. Start servers for CPU snapshots, refresh for GPU snapshots."""
+        self._init_runtime_state()
+        if ENABLE_GPU_SNAPSHOT:
+            self._refresh_after_snapshot_restore()
+        else:
+            self._start_servers_if_needed()
     
     def _init_clients(self):
         """Initialize HTTP clients for vLLM and MedSigLIP."""
@@ -210,6 +296,7 @@ class SturgeonService:
         import time
         import asyncio
         import re
+        import hashlib
         import pdfplumber
         from PIL import Image
 
@@ -246,6 +333,7 @@ class SturgeonService:
 
         logger = StructuredLogger("api")
         rag_distance_threshold = 1.3
+        model_max_context = 4096
 
         fastapi_app = FastAPI(
             title="Sturgeon AI Service",
@@ -340,12 +428,69 @@ class SturgeonService:
 
             return raw_text[:1000] if raw_text else "Unknown vLLM error"
 
+        def _estimate_input_tokens(messages: list[dict]) -> int:
+            chars = 0
+            for message in messages:
+                chars += 24
+                content = message.get("content")
+                if isinstance(content, str):
+                    chars += len(content)
+                elif isinstance(content, list):
+                    for part in content:
+                        if not isinstance(part, dict):
+                            chars += len(str(part))
+                            continue
+                        if part.get("type") == "text":
+                            chars += len(str(part.get("text", "")))
+                        elif part.get("type") == "image_url":
+                            # Approximate multimodal token cost to avoid overflow.
+                            chars += 4200
+            # Conservative estimate for safety.
+            return max(1, int(chars / 3.4))
+
+        def _preclamp_output_tokens(
+            *,
+            endpoint_name: str,
+            messages: list[dict],
+            requested_max_tokens: int,
+            safety_margin: int = 96,
+        ) -> int:
+            estimated_input_tokens = _estimate_input_tokens(messages)
+            available_tokens = model_max_context - estimated_input_tokens - safety_margin
+            effective_max_tokens = max(128, min(requested_max_tokens, available_tokens))
+            if effective_max_tokens < requested_max_tokens:
+                logger.info(
+                    "Pre-clamped max tokens based on estimated input size",
+                    endpoint=endpoint_name,
+                    requested_max_tokens=requested_max_tokens,
+                    effective_max_tokens=effective_max_tokens,
+                    estimated_input_tokens=estimated_input_tokens,
+                )
+            return effective_max_tokens
+
         def _truncate_text(text: str, max_chars: int) -> str:
             if len(text) <= max_chars:
                 return text
             head = int(max_chars * 0.7)
             tail = max_chars - head - 32
             return text[:head] + "\n...[truncated for token budget]...\n" + text[-tail:]
+
+        def _is_likely_truncated_json_response(text: str) -> bool:
+            trimmed = text.strip()
+            if not trimmed:
+                return True
+            if trimmed.count("{") > trimmed.count("}"):
+                return True
+            if trimmed.count("[") > trimmed.count("]"):
+                return True
+            return not trimmed.endswith("}")
+
+        def _compact_triage_summary(summary: str, max_lines: int = 6, max_chars: int = 520) -> str:
+            if not summary:
+                return ""
+            lines = [line.strip() for line in summary.splitlines() if line.strip()]
+            compact = "\n".join(lines[:max_lines])
+            return _truncate_text(compact, max_chars)
 
         def _is_input_overflow_error(error_message: str) -> bool:
             return (
@@ -409,8 +554,12 @@ class SturgeonService:
             messages: list[dict],
             max_tokens: int,
             temperature: float,
-        ) -> tuple[str, int]:
-            requested_max_tokens = max_tokens
+        ) -> tuple[str, int, str | None]:
+            requested_max_tokens = _preclamp_output_tokens(
+                endpoint_name=endpoint_name,
+                messages=messages,
+                requested_max_tokens=max_tokens,
+            )
             last_error = "Unknown error"
             messages_to_send = messages
             compacted_for_input_overflow = False
@@ -435,10 +584,12 @@ class SturgeonService:
                 if response.status_code == 200 and isinstance(payload, dict):
                     choices = payload.get("choices")
                     if isinstance(choices, list) and choices:
-                        message = choices[0].get("message", {})
+                        first_choice = choices[0]
+                        message = first_choice.get("message", {})
                         content = message.get("content")
                         if isinstance(content, str):
-                            return content, requested_max_tokens
+                            finish_reason = first_choice.get("finish_reason")
+                            return content, requested_max_tokens, finish_reason
 
                     last_error = "vLLM returned 200 without choices/message content"
                     break
@@ -448,13 +599,18 @@ class SturgeonService:
 
                 retry_max_tokens = _infer_retry_max_tokens(error_message, requested_max_tokens)
                 if retry_max_tokens and attempt == 0:
+                    preclamped_retry = _preclamp_output_tokens(
+                        endpoint_name=endpoint_name,
+                        messages=messages_to_send,
+                        requested_max_tokens=retry_max_tokens,
+                    )
                     logger.warning(
                         "vLLM max token overflow; retrying with reduced output budget",
                         endpoint=endpoint_name,
                         requested_max_tokens=requested_max_tokens,
-                        retry_max_tokens=retry_max_tokens,
+                        retry_max_tokens=preclamped_retry,
                     )
-                    requested_max_tokens = retry_max_tokens
+                    requested_max_tokens = preclamped_retry
                     continue
 
                 if _is_input_overflow_error(error_message) and attempt == 0 and not compacted_for_input_overflow:
@@ -463,7 +619,11 @@ class SturgeonService:
                         endpoint=endpoint_name,
                     )
                     messages_to_send = _compact_messages_for_retry(messages_to_send)
-                    requested_max_tokens = min(requested_max_tokens, 1024)
+                    requested_max_tokens = _preclamp_output_tokens(
+                        endpoint_name=endpoint_name,
+                        messages=messages_to_send,
+                        requested_max_tokens=min(requested_max_tokens, 1024),
+                    )
                     compacted_for_input_overflow = True
                     continue
 
@@ -492,14 +652,134 @@ class SturgeonService:
                 )
             return compacted
 
+        def _compact_rounds_for_summary(
+            rounds: list[dict],
+            max_rounds: int = 4,
+            challenge_chars: int = 220,
+            response_chars: int = 320,
+        ) -> list[dict]:
+            if not rounds:
+                return []
+
+            compacted = []
+            for round_data in rounds[-max_rounds:]:
+                challenge = str(round_data.get("user_challenge", round_data.get("challenge", "")))
+                response = str(round_data.get("ai_response", round_data.get("response", "")))
+                compacted.append(
+                    {
+                        "user_challenge": _truncate_text(challenge, challenge_chars),
+                        "ai_response": _truncate_text(response, response_chars),
+                    }
+                )
+
+            return compacted
+
         def _trim_retrieved_context(context: str, max_chars: int = 2400) -> str:
             if not context:
                 return ""
             return _truncate_text(context, max_chars)
 
+        def _rag_cache_key(user_challenge: str, current_differential: list) -> str:
+            dx_names = []
+            for diagnosis in current_differential[:4]:
+                if hasattr(diagnosis, "name"):
+                    dx_names.append(str(diagnosis.name).strip().lower())
+                elif isinstance(diagnosis, dict):
+                    dx_names.append(str(diagnosis.get("name", "")).strip().lower())
+            payload = f"{user_challenge.strip().lower()}|{','.join(dx_names)}"
+            return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+        def _rag_cache_get(cache_key: str) -> str:
+            if self.rag_cache_ttl_seconds <= 0:
+                return ""
+
+            entry = self.rag_query_cache.get(cache_key)
+            if not entry:
+                self.rag_cache_misses += 1
+                return ""
+
+            now = time.time()
+            age_seconds = now - float(entry.get("ts", 0))
+            if age_seconds > self.rag_cache_ttl_seconds:
+                self.rag_query_cache.pop(cache_key, None)
+                self.rag_cache_misses += 1
+                return ""
+
+            self.rag_cache_hits += 1
+            return str(entry.get("context", ""))
+
+        def _rag_cache_set(cache_key: str, context: str) -> None:
+            if self.rag_cache_ttl_seconds <= 0 or not context:
+                return
+
+            self.rag_query_cache[cache_key] = {
+                "context": context,
+                "ts": time.time(),
+            }
+
+            while len(self.rag_query_cache) > self.rag_cache_max_entries:
+                self.rag_query_cache.popitem(last=False)
+
+        def _infer_topic_hints(user_challenge: str, current_differential: list) -> set[str]:
+            combined = user_challenge.lower()
+            for dx in current_differential[:4]:
+                if hasattr(dx, "name"):
+                    combined += " " + str(dx.name).lower()
+                elif isinstance(dx, dict):
+                    combined += " " + str(dx.get("name", "")).lower()
+
+            hints: set[str] = set()
+            topic_map = {
+                "melanoma": ["melanoma", "pigmented", "nevus", "lesion", "skin", "dermat"],
+                "melanoma_diagnosis": ["melanoma", "pigmented", "nevus", "lesion", "skin", "dermat"],
+                "pneumonia_treatment": ["pneumonia", "cap", "respiratory", "chest", "lung", "legionella"],
+                "pneumonia_severity": ["pneumonia", "cap", "respiratory", "chest", "lung", "legionella"],
+                "sepsis": ["sepsis", "sofa", "qsofa", "sirs", "shock", "lactate"],
+                "sepsis_diagnosis": ["sepsis", "sofa", "qsofa", "sirs", "shock", "lactate"],
+            }
+
+            for topic, keywords in topic_map.items():
+                if any(keyword in combined for keyword in keywords):
+                    hints.add(topic)
+
+            return hints
+
+        def _select_diverse_chunks(chunks: list, max_chunks: int = 4) -> list:
+            selected = []
+            topic_counts: dict[str, int] = {}
+            source_counts: dict[str, int] = {}
+
+            sorted_chunks = sorted(chunks, key=lambda c: c.distance)
+            for chunk in sorted_chunks:
+                topic = str(getattr(chunk, "topic", "general") or "general")
+                source = str(getattr(chunk, "organization", "Unknown") or "Unknown")
+
+                if topic_counts.get(topic, 0) >= 2:
+                    continue
+                if source_counts.get(source, 0) >= 2:
+                    continue
+
+                selected.append(chunk)
+                topic_counts[topic] = topic_counts.get(topic, 0) + 1
+                source_counts[source] = source_counts.get(source, 0) + 1
+
+                if len(selected) >= max_chunks:
+                    break
+
+            if len(selected) < min(2, len(sorted_chunks)):
+                selected = sorted_chunks[:max_chunks]
+
+            return selected
+
         async def _retrieve_rag_context(user_challenge: str, current_differential: list, timeout_seconds: float = 5.0) -> str:
             if not self.rag_available:
                 return ""
+
+            cache_key = _rag_cache_key(user_challenge, current_differential)
+            cached_context = _rag_cache_get(cache_key)
+            if cached_context:
+                logger.info("RAG cache hit", cache_hits=self.rag_cache_hits, cache_misses=self.rag_cache_misses)
+                return cached_context
 
             dx_names = [d.name for d in current_differential[:3]]
             rag_query = (
@@ -513,6 +793,7 @@ class SturgeonService:
                     self.retriever.retrieve,
                     query=rag_query,
                     ip_address="internal",
+                    top_k=8,
                 )
                 if rag_error or not chunks:
                     return ""
@@ -521,8 +802,20 @@ class SturgeonService:
                 if not relevant_chunks:
                     return ""
 
-                compact_chunks = relevant_chunks[:4]
-                return _trim_retrieved_context(self.retriever.format_retrieved_context(compact_chunks))
+                topic_hints = _infer_topic_hints(user_challenge, current_differential)
+                if topic_hints:
+                    hinted = []
+                    for chunk in relevant_chunks:
+                        topic = str(getattr(chunk, "topic", "") or "").lower()
+                        if any(hint in topic for hint in topic_hints):
+                            hinted.append(chunk)
+                    if hinted:
+                        relevant_chunks = hinted
+
+                compact_chunks = _select_diverse_chunks(relevant_chunks, max_chunks=4)
+                final_context = _trim_retrieved_context(self.retriever.format_retrieved_context(compact_chunks), max_chars=1800)
+                _rag_cache_set(cache_key, final_context)
+                return final_context
             except asyncio.TimeoutError:
                 logger.warning("RAG retrieval timed out", timeout_seconds=timeout_seconds)
                 return ""
@@ -624,10 +917,10 @@ class SturgeonService:
             ]
 
             try:
-                content, _ = await _call_vllm_chat(
+                content, _, _ = await _call_vllm_chat(
                     endpoint_name="debate-turn-fallback",
                     messages=messages,
-                    max_tokens=2048,
+                    max_tokens=1200,
                     temperature=0.7,
                 )
                 data = extract_json(content)
@@ -649,10 +942,10 @@ class SturgeonService:
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": correction_prompt},
                     ]
-                    retry_content, _ = await _call_vllm_chat(
+                    retry_content, _, _ = await _call_vllm_chat(
                         endpoint_name="debate-turn-fallback-retry",
                         messages=correction_messages,
-                        max_tokens=2048,
+                        max_tokens=1024,
                         temperature=0.2,
                     )
                     data = extract_json(retry_content)
@@ -710,7 +1003,54 @@ class SturgeonService:
                 "image_triage": "medsiglip+medgemma",
                 "guideline_retrieval": "vector-rag" if self.rag_available else "prompt-only",
                 "active_sessions": len(self.sessions),
+                "snapshot": {
+                    "memory_enabled": ENABLE_MEMORY_SNAPSHOT,
+                    "gpu_enabled": ENABLE_GPU_SNAPSHOT,
+                },
+                "rag_cache": {
+                    "enabled": self.rag_cache_ttl_seconds > 0,
+                    "ttl_seconds": self.rag_cache_ttl_seconds,
+                    "max_entries": self.rag_cache_max_entries,
+                    "entries": len(self.rag_query_cache),
+                    "hits": self.rag_cache_hits,
+                    "misses": self.rag_cache_misses,
+                },
+                "concurrency": {
+                    "max_containers": MODAL_MAX_CONTAINERS,
+                    "max_inputs": MODAL_MAX_INPUTS,
+                    "target_inputs": MODAL_TARGET_INPUTS,
+                },
             }
+
+        @fastapi_app.get("/vllm-metrics")
+        async def vllm_metrics():
+            """Expose selected vLLM metrics for queue/latency debugging."""
+            try:
+                response = await self.vllm_client.get("/metrics")
+                response.raise_for_status()
+                metrics_text = response.text
+                key_lines = []
+                for line in metrics_text.splitlines():
+                    if not line or line.startswith("#"):
+                        continue
+                    if (
+                        "num_requests_waiting" in line
+                        or "num_requests_running" in line
+                        or "queue_time" in line
+                        or "time_to_first_token" in line
+                    ):
+                        key_lines.append(line)
+
+                return {
+                    "status": "ok",
+                    "key_metrics": key_lines[:40],
+                    "metrics_excerpt_available": len(key_lines) > 0,
+                }
+            except Exception as e:
+                return JSONResponse(
+                    status_code=503,
+                    content={"status": "error", "detail": f"Failed to read vLLM metrics: {e}"},
+                )
 
         @fastapi_app.get("/rag-status")
         async def rag_status():
@@ -722,6 +1062,14 @@ class SturgeonService:
             try:
                 return {
                     "available": True,
+                    "query_cache": {
+                        "enabled": self.rag_cache_ttl_seconds > 0,
+                        "ttl_seconds": self.rag_cache_ttl_seconds,
+                        "max_entries": self.rag_cache_max_entries,
+                        "entries": len(self.rag_query_cache),
+                        "hits": self.rag_cache_hits,
+                        "misses": self.rag_cache_misses,
+                    },
                     **self.retriever.get_status(),
                 }
             except Exception as e:
@@ -794,7 +1142,7 @@ class SturgeonService:
             ]
 
             try:
-                content, _ = await _call_vllm_chat(
+                content, _, _ = await _call_vllm_chat(
                     endpoint_name="extract-labs",
                     messages=messages,
                     max_tokens=1024,
@@ -867,7 +1215,7 @@ class SturgeonService:
                     {"role": "user", "content": prompt},
                 ]
 
-                content, _ = await _call_vllm_chat(
+                content, _, _ = await _call_vllm_chat(
                     endpoint_name="extract-labs-file",
                     messages=messages,
                     max_tokens=2048,
@@ -878,7 +1226,7 @@ class SturgeonService:
                     data = extract_json(content)
                 except Exception:
                     logger.warning("extract-labs-file JSON parse failed on first attempt, retrying")
-                    retry_content, _ = await _call_vllm_chat(
+                    retry_content, _, _ = await _call_vllm_chat(
                         endpoint_name="extract-labs-file-retry",
                         messages=messages,
                         max_tokens=2048,
@@ -924,10 +1272,19 @@ class SturgeonService:
                     headers=rate_limit_headers,
                 )
 
-            formatted_labs = format_lab_values(request_model.lab_values)
+            compact_history = _truncate_text(patient_history, 2400)
+            formatted_labs = _truncate_text(format_lab_values(request_model.lab_values), 1100)
             prompt = DIFFERENTIAL_PROMPT.format(
-                patient_history=patient_history,
+                patient_history=compact_history,
                 formatted_lab_values=formatted_labs,
+            )
+            prompt += (
+                "\n\nIMPORTANT: Keep output concise and structured. "
+                "Return exactly 3 diagnoses. "
+                "Max 2 supporting_evidence items per diagnosis. "
+                "Max 1 against_evidence item per diagnosis. "
+                "Max 2 suggested_tests per diagnosis. "
+                "Each bullet under 16 words. Return JSON only."
             )
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -935,12 +1292,33 @@ class SturgeonService:
             ]
 
             try:
-                content, _ = await _call_vllm_chat(
+                content, _, finish_reason = await _call_vllm_chat(
                     endpoint_name="differential",
                     messages=messages,
-                    max_tokens=3072,
-                    temperature=0.3,
+                    max_tokens=1024,
+                    temperature=0.25,
                 )
+
+                if finish_reason == "length" or _is_likely_truncated_json_response(content):
+                    logger.warning("Differential output likely truncated; retrying with concise JSON constraints")
+                    concise_prompt = (
+                        prompt
+                        + "\n\nIMPORTANT: Keep output concise to fit token budget. "
+                        + "Return exactly 3 diagnoses. Max 3 supporting_evidence items per diagnosis. "
+                        + "Max 2 against_evidence items per diagnosis. Max 2 suggested_tests per diagnosis. "
+                        + "Return JSON only."
+                    )
+                    concise_messages = [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": concise_prompt},
+                    ]
+                    content, _, _ = await _call_vllm_chat(
+                        endpoint_name="differential-concise-retry",
+                        messages=concise_messages,
+                        max_tokens=768,
+                        temperature=0.2,
+                    )
+
                 data = extract_json(content)
 
                 validation = validate_differential_response(
@@ -964,10 +1342,10 @@ JSON Response:"""
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": correction_prompt},
                     ]
-                    retry_content, _ = await _call_vllm_chat(
+                    retry_content, _, _ = await _call_vllm_chat(
                         endpoint_name="differential-retry",
                         messages=correction_messages,
-                        max_tokens=3072,
+                        max_tokens=896,
                         temperature=0.2,
                     )
                     data = extract_json(retry_content)
@@ -1060,8 +1438,8 @@ JSON Response:"""
             try:
                 contents = await file.read()
                 image = Image.open(io.BytesIO(contents)).convert("RGB")
-                if max(image.size) > 1024:
-                    image.thumbnail((1024, 1024))
+                if max(image.size) > 960:
+                    image.thumbnail((960, 960))
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Failed to read image: {e}")
 
@@ -1088,39 +1466,41 @@ JSON Response:"""
                 logger.warning("MedSigLIP triage failed", error=str(e))
 
             modality = triage_result.get("modality", "unknown")
+            compact_triage = _compact_triage_summary(str(triage_result.get("triage_summary", "")))
             if modality == "uncertain":
-                medgemma_prompt = """Analyze this medical image in detail.
+                medgemma_prompt = """Analyze this medical image.
 
-First, identify the imaging modality (e.g., chest X-ray, dermatology/skin photograph, histopathology slide, CT scan, MRI, etc.).
+First identify the likely modality, then provide concise findings.
 
-Then provide a thorough clinical interpretation including:
-1. Image type and quality
-2. Key findings
-3. Clinical significance
-4. Differential considerations
-5. Recommended follow-up
+Output format:
+1) Modality and image quality
+2) Key visible findings (max 6 bullets)
+3) Most likely clinical interpretation
+4) Main differential considerations
+5) Recommended follow-up
 
-Be specific and cite visible features in the image."""
+Keep each bullet under 18 words and avoid long prose."""
                 system_prompt = (
                     "You are a medical imaging specialist experienced in radiology, dermatology, and pathology. "
-                    "Analyze medical images with precision and cite specific visual findings."
+                    "Analyze medical images with precision and concise, evidence-based findings."
                 )
             else:
-                medgemma_prompt = f"""Analyze this medical image in detail.
+                medgemma_prompt = f"""Analyze this medical image.
 
-{triage_result.get('triage_summary', '')}
+Triage context:
+{compact_triage}
 
-Provide a thorough clinical interpretation including:
-1. Image type and quality
-2. Key findings
-3. Clinical significance
-4. Differential considerations
-5. Recommended follow-up
+Provide concise clinical interpretation:
+1) Confirm modality and quality
+2) Key findings (max 6 bullets)
+3) Clinical significance
+4) Differential considerations
+5) Recommended follow-up
 
-Be specific and cite visible features in the image."""
+Keep each bullet under 18 words and avoid long prose."""
                 system_prompt = (
                     "You are a specialist radiologist and medical imaging expert. "
-                    "Analyze medical images with precision and cite specific visual findings."
+                    "Analyze medical images with precision and concise, evidence-based findings."
                 )
 
             messages = [
@@ -1135,10 +1515,10 @@ Be specific and cite visible features in the image."""
             ]
 
             try:
-                medgemma_analysis, used_max_tokens = await _call_vllm_chat(
+                medgemma_analysis, used_max_tokens, _ = await _call_vllm_chat(
                     endpoint_name="analyze-image",
                     messages=messages,
-                    max_tokens=768,
+                    max_tokens=512,
                     temperature=0.1,
                 )
 
@@ -1158,10 +1538,10 @@ Be specific and cite visible features in the image."""
                             ],
                         },
                     ]
-                    retry_analysis, _ = await _call_vllm_chat(
+                    retry_analysis, _, _ = await _call_vllm_chat(
                         endpoint_name="analyze-image-retry",
                         messages=retry_messages,
-                        max_tokens=512,
+                        max_tokens=320,
                         temperature=0.3,
                     )
                     if not is_pure_refusal(retry_analysis):
@@ -1209,10 +1589,14 @@ Be specific and cite visible features in the image."""
                     headers=rate_limit_headers,
                 )
 
-            patient_history = sanitize_patient_history(request_model.patient_history)
-            formatted_labs = format_lab_values(request_model.lab_values)
-            formatted_diff = format_differential([d.model_dump() for d in request_model.final_differential])
-            formatted_rounds = format_rounds(request_model.debate_rounds)
+            patient_history = _truncate_text(sanitize_patient_history(request_model.patient_history), 2200)
+            formatted_labs = _truncate_text(format_lab_values(request_model.lab_values), 1100)
+            formatted_diff = _truncate_text(
+                format_differential([d.model_dump() for d in request_model.final_differential]),
+                1200,
+            )
+            compact_rounds = _compact_rounds_for_summary(request_model.debate_rounds)
+            formatted_rounds = _truncate_text(format_rounds(compact_rounds), 2000)
 
             prompt = SUMMARY_PROMPT.format(
                 patient_history=patient_history,
@@ -1226,12 +1610,32 @@ Be specific and cite visible features in the image."""
             ]
 
             try:
-                content, _ = await _call_vllm_chat(
+                content, _, finish_reason = await _call_vllm_chat(
                     endpoint_name="summary",
                     messages=messages,
-                    max_tokens=3072,
+                    max_tokens=1536,
                     temperature=0.3,
                 )
+
+                if finish_reason == "length" or _is_likely_truncated_json_response(content):
+                    logger.warning("Summary output likely truncated; retrying with concise JSON constraints")
+                    concise_prompt = (
+                        prompt
+                        + "\n\nIMPORTANT: Keep output compact. reasoning_chain max 5 items, "
+                        + "ruled_out max 3 items, next_steps max 4 items. "
+                        + "Each list item under 20 words. Return JSON only."
+                    )
+                    concise_messages = [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": concise_prompt},
+                    ]
+                    content, _, _ = await _call_vllm_chat(
+                        endpoint_name="summary-concise-retry",
+                        messages=concise_messages,
+                        max_tokens=1152,
+                        temperature=0.2,
+                    )
+
                 data = extract_json(content)
 
                 ruled_out_raw = data.get("ruled_out", [])

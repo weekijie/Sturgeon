@@ -81,7 +81,8 @@ export default function UploadPage() {
     resetCase,
   } = useCase();
 
-  const { status: warmupStatus } = useWarmup(true);
+  const warmupAutoStart = process.env.NEXT_PUBLIC_WARMUP_AUTOSTART === "true";
+  const { status: warmupStatus, error: warmupError, startWarmup } = useWarmup(warmupAutoStart);
 
   // Multi-file state: separate slots for image and lab report
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -202,6 +203,7 @@ export default function UploadPage() {
 
     resetCase();
 
+    startWarmup();
     setIsAnalyzing(true);
     setError(null);
     setIsRateLimited(false);
@@ -294,12 +296,15 @@ export default function UploadPage() {
           setImageAnalysis(imgAnalysis, imagePreview);
         }
 
+        const compactTriageSummary = (imgAnalysis.triage_summary || "").slice(0, 420);
+        const compactMedgemmaAnalysis = (imgAnalysis.medgemma_analysis || "").slice(0, 900);
+
         const imageContext = [
           `\n\n--- Medical Image Analysis ---`,
           `Image type: ${imgAnalysis.image_type}`,
           `Modality: ${imgAnalysis.modality}`,
-          imgAnalysis.triage_summary,
-          `\nDetailed Interpretation:\n${imgAnalysis.medgemma_analysis}`,
+          compactTriageSummary,
+          `\nDetailed Interpretation:\n${compactMedgemmaAnalysis}`,
         ].join("\n");
 
         enrichedHistory = patientHistory
@@ -359,7 +364,7 @@ export default function UploadPage() {
 
   return (
     <>
-      <WarmupToast status={warmupStatus} />
+      <WarmupToast status={warmupStatus} error={warmupError} autoStart={warmupAutoStart} />
       <main className="min-h-screen flex items-center justify-center p-6 pt-8">
       <div className="w-full max-w-2xl space-y-6">
         {/* Header */}

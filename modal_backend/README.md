@@ -20,7 +20,8 @@ Serverless deployment of the Sturgeon AI diagnostic service on Modal with vLLM.
 │                                                             │
 │  Volumes:                                                   │
 │  - medgemma-cache/ (HuggingFace model cache)               │
-│  - chroma-db/ (RAG vector index)                           │
+│  - vllm-cache/ (vLLM runtime/cache artifacts)              │
+│  - chroma-db/ (RAG vector index + query cache)             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,6 +74,7 @@ modal serve app.py  # Hot reload for development
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/health` | Health check |
+| GET | `/vllm-metrics` | vLLM queue/throughput debug metrics |
 | POST | `/extract-labs` | Extract lab values from text |
 | POST | `/differential` | Generate differential diagnoses |
 | POST | `/debate-turn` | Handle debate turn |
@@ -91,11 +93,24 @@ modal serve app.py  # Hot reload for development
 
 ## Environment Variables
 
-Set via Modal secrets:
+Set via Modal secrets/environment:
 
 - `GEMINI_API_KEY` - Required for orchestrator
 - `GEMINI_MODEL` - Optional (default: gemini-2.0-flash)
 - `DISABLE_MEDSIGLIP` - Set to disable image triage
+- `ENABLE_MEMORY_SNAPSHOT` - Optional (default: `1`)
+- `ENABLE_GPU_SNAPSHOT` - Optional (default: `0`, experimental)
+- `RAG_CACHE_TTL_SECONDS` - Optional (default: `900`)
+- `RAG_CACHE_MAX_ENTRIES` - Optional (default: `256`)
+- `MODAL_MAX_CONTAINERS` - Optional (default: `1`)
+- `MODAL_MAX_INPUTS` - Optional (default: `8`)
+- `MODAL_TARGET_INPUTS` - Optional (default: `4`)
+
+## Snapshot Modes
+
+- CPU snapshot default: `ENABLE_MEMORY_SNAPSHOT=1`, `ENABLE_GPU_SNAPSHOT=0`
+- GPU snapshot opt-in (alpha): `ENABLE_GPU_SNAPSHOT=1`
+- Both modes keep RAG index cache on the persistent `chroma-db` volume.
 
 ## Vercel Frontend Integration
 

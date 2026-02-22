@@ -39,6 +39,11 @@ export default function SummaryPage() {
 
     didFetch.current = true;
 
+    const compactRounds = caseData.debateRounds.slice(-4).map((round) => ({
+      user_challenge: (round.user_challenge || "").slice(0, 220),
+      ai_response: (round.ai_response || "").slice(0, 320),
+    }));
+
     const fetchSummary = async () => {
       try {
         const response = await fetch("/api/summary", {
@@ -48,7 +53,7 @@ export default function SummaryPage() {
             patient_history: caseData.patientHistory,
             lab_values: caseData.labValues,
             final_differential: caseData.differential,
-            debate_rounds: caseData.debateRounds,
+            debate_rounds: compactRounds,
           }),
         });
 

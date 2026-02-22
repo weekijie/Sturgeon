@@ -105,6 +105,7 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 - **🧠 Agentic Dual-Model Architecture** - Gemini orchestrator + MedGemma specialist
 - **📊 Multi-Modal Analysis** - Process medical images + lab reports simultaneously  
 - **🔍 RAG-Enhanced Reasoning** - Clinical guidelines with automatic citation extraction
+- **🚀 Production Queue Hardening** - Modal input concurrency + Vercel timeout alignment
 - **🛡️ Hallucination Prevention** - Auto-validation with retry on detected fabrications
 - **📐 LLM-as-Judge Evaluation** - Faithfulness, relevance, comprehensiveness metrics
 - **⚡ Smart Rate Limiting** - Per-endpoint quota management with visual feedback
@@ -135,6 +136,7 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 ## Getting Started
 
 For production deployment (Modal + Vercel), see `DEPLOYMENT.md`.
+For the queued follow-up patch list, see `NEXT_PATCH_PLAN.md`.
 
 ### Prerequisites
 
@@ -252,9 +254,9 @@ npm run dev
 
 ### Cold Start Note
 
-> **First load takes 2-3 minutes.** The AI runs on serverless GPU infrastructure to keep costs low. When the container is cold (after 10+ minutes of inactivity), the first request will take 2-3 minutes while the model loads. Subsequent requests are fast (~10-30 seconds).
+> **First load can take 2-3 minutes.** The AI runs on serverless GPU infrastructure to keep costs low. In production, CPU memory snapshots are enabled by default and reduce repeated initialization overhead, but the first cold request can still take a couple of minutes while model services become ready.
 >
-> A warmup toast notification appears when the page loads to indicate AI status. Once you see "AI ready!", the system is warmed up and ready for use.
+> Warmup uses bounded polling and may pause to save credits. Once you see "AI ready!", subsequent requests in the same warm window are significantly faster.
 
 ### API Example
 
@@ -340,6 +342,7 @@ Sturgeon uses an **agentic dual-model architecture** that maps directly to the A
 | `/debate-turn` | POST | 20/min | Handle debate round (orchestrated) |
 | `/summary` | POST | 10/min | Generate final diagnosis summary |
 | `/rag-status` | GET | - | RAG retriever status & statistics |
+| `/vllm-metrics` | GET | - | vLLM queue/throughput debug metrics |
 
 All endpoints return rate limit headers:
 - `X-RateLimit-Limit`: Maximum requests per window
@@ -366,12 +369,13 @@ All endpoints return rate limit headers:
 - [x] Session persistence via localStorage
 - [x] Mobile responsive design
 - [x] 156 backend unit tests passing
+- [x] Modal + Vercel production deployment (queue/timeout hardening)
 
 ### 🚧 In Progress
 
 - [ ] Demo video recording
 - [ ] Submission documentation
-- [ ] Vercel deployment setup
+- [ ] Final logchecklist pass with retry-churn patch (`NEXT_PATCH_PLAN.md`)
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
 

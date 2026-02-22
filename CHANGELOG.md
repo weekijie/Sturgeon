@@ -2,6 +2,201 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-02-23] Session 26 — Post-Deploy Logchecklist Audit (CPU Snapshot Run)
+
+### Verification Scope
+- Audited production behavior using `logchecklist.md` against:
+  - `modallog.txt`
+  - `sturgeon-log-export-2026-02-22T16-25-15.json`
+  - Modal invocation timing table from production run
+
+### Results
+- **CPU snapshot mode stable**:
+  - `enable_memory_snapshot=true`, `enable_gpu_snapshot=false`
+  - No GPU snapshot NCCL broken-pipe failure pattern observed in this run.
+- **Queue/concurrency behavior improved**:
+  - vLLM telemetry repeatedly showed `Running: 2 reqs, Waiting: 0 reqs`.
+  - Warm-path health checks remained responsive (~100-300ms execution).
+- **Latency SLOs improved**:
+  - `/analyze-image`: ~16s-33s in sampled runs (well under target)
+  - `/differential`: ~43s-72s in sampled runs (under target)
+  - `/summary`: ~42s-53s in sampled runs (under target)
+  - `/debate-turn`: mostly ~36s-61s (p95 within target; p50 still near threshold)
+- **Functional correctness**:
+  - Differential outputs returned 3 diagnoses in sampled runs.
+  - Debate and summary flows completed with HTTP 200.
+
+### Issues Still Open
+- **Retry churn** remains elevated:
+  - Frequent `Differential output likely truncated; retrying with concise JSON constraints`
+  - Frequent `Summary output likely truncated; retrying with concise JSON constraints`
+- **RAG query length guard** can block retrieval on long prompts:
+  - `SECURITY [BLOCKED] ... Query exceeds maximum length of 500 characters`
+  - Some blocked turns correlate with `has_guidelines=false` in final debate response.
+
+### Documentation Added
+- Added `NEXT_PATCH_PLAN.md` with concrete follow-up patch plan for the next session.
+- Updated `README.md`, `CLAUDE.md`, `STURGEON_PROJECT_PLAN.md`, and `DEPLOYMENT.md` with this session's deployment stabilization status and next patch direction.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: GPU snapshot path was unstable for this workload during earlier production tests.
+   - **Why**: Alpha GPU snapshot behavior plus vLLM/NCCL subprocess lifecycle interactions produced instability.
+   - **Resolution**: Continued with CPU snapshots as default production mode for reliability.
+   - **Lesson**: Treat GPU snapshots as experimental until repeated production runs are clean.
+
+2. **Problem**: RAG retrieval was occasionally blocked despite healthy core inference.
+   - **Why**: Constructed retrieval query exceeded retriever max length (500 chars).
+   - **Resolution**: Prepared explicit follow-up patch to truncate retrieval query before `retrieve()` call.
+   - **Workaround**: Keep debate challenge prompts concise where possible until patch is applied.
+
+## [2026-02-22] Session 25 — Queue/Timeout Mitigation for Vercel 504s
+
+### Backend (modal_backend)
+
+#### Changed
+- **Modal input concurrency enabled** (`modal_backend/app.py`):
+  - Added class-level `@modal.concurrent(max_inputs=..., target_inputs=...)` for the ASGI service.
+  - Added env-tunable scaling/concurrency settings:
+    - `MODAL_MAX_CONTAINERS` (default `1`)
+    - `MODAL_MAX_INPUTS` (default `8`)
+    - `MODAL_TARGET_INPUTS` (default `4`)
+- **Queue observability endpoint** (`modal_backend/app.py`):
+  - Added `GET /vllm-metrics` to expose selected queue/latency counters from vLLM `/metrics`.
+  - Added concurrency config fields to `/health` for runtime visibility.
+- **Differential tail-latency tuning** (`modal_backend/app.py`):
+  - Tightened default output budget and compactness constraints.
+  - Reduced retry token budgets to avoid multi-minute decode tails.
+
+### Frontend (Vercel API routes)
+
+#### Changed
+- **Timeout alignment for long-running routes**:
+  - Added `runtime="nodejs"` + `maxDuration=300` to `analyze-image`, `differential`, `debate-turn`, and `summary` routes.
+  - Increased backend fetch timeout for `analyze-image` and `differential` to `295000ms`.
+- **Health-probe pressure control** (`frontend/app/api/health/route.ts`):
+  - Added 5s backend timeout to fail fast instead of waiting on long queue stalls.
+
+### Documentation
+
+#### Updated
+- `DEPLOYMENT.md` and `modal_backend/README.md` updated with new concurrency env vars and `vllm-metrics` endpoint.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Vercel returned 504 while Modal later completed successfully.
+   - **Why**: Frontend route timeout elapsed while request was still queued/running on backend.
+   - **Resolution**: Increased route max duration/timeout and enabled backend input concurrency.
+   - **Lesson**: Timeout budgets must include queue time, not just execution time.
+
+2. **Problem**: Warmup health checks showed long wall-clock durations with tiny execution time.
+   - **Why**: Health requests were waiting behind long inference work in a single-lane input path.
+   - **Resolution**: Enabled input concurrency and made health route fail fast at 5 seconds on frontend.
+   - **Workaround**: Monitor `GET /vllm-metrics` during load to confirm queue behavior.
+
+## [2026-02-22] Session 24 — Snapshot Modes (CPU Default, GPU Opt-In) + RAG Query Cache
+
+### Backend (modal_backend)
+
+#### Changed
+- **Snapshot-capable Modal class config** (`modal_backend/app.py`):
+  - Added env-driven snapshot toggles:
+    - `ENABLE_MEMORY_SNAPSHOT` (default `true`)
+    - `ENABLE_GPU_SNAPSHOT` (default `false`, opt-in)
+  - Wired `@app.cls(...)` with `enable_memory_snapshot` and optional `experimental_options={"enable_gpu_snapshot": True}`.
+  - Split lifecycle into `@modal.enter(snap=True)` + `@modal.enter(snap=False)` phases for snapshot-safe startup.
+
+- **vLLM runtime cache volume** (`modal_backend/app.py`):
+  - Added persistent volume mount at `/root/.cache/vllm` (`vllm-cache`) to retain vLLM runtime artifacts.
+  - Added `HF_XET_HIGH_PERFORMANCE=1` for faster Hugging Face transfer behavior.
+
+- **RAG retrieval query cache** (`modal_backend/app.py`):
+  - Added bounded in-memory LRU-style cache for debate retrieval contexts.
+  - Added configurable cache controls:
+    - `RAG_CACHE_TTL_SECONDS` (default `900`)
+    - `RAG_CACHE_MAX_ENTRIES` (default `256`)
+  - Added health visibility for cache hit/miss and entry counts.
+
+- **Dependency baseline refresh** (`modal_backend/app.py`, `modal_backend/requirements.txt`):
+  - Updated vLLM floor to `>=0.13.0`.
+  - Added `huggingface-hub>=0.36.0` explicit dependency.
+
+### Documentation
+
+#### Updated
+- `DEPLOYMENT.md`:
+  - Synced runtime config to current values (`scaledown_window=300`, snapshot settings, `vllm-cache` volume).
+  - Added optional env vars for snapshot and RAG cache tuning.
+- `modal_backend/README.md`:
+  - Added snapshot mode documentation and RAG cache env settings.
+  - Added `vllm-cache` volume description.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Snapshot support was requested, but existing startup path used a single `@modal.enter()` flow.
+   - **Why**: Server startup, runtime state, and dependency initialization were tightly coupled.
+   - **Resolution**: Split startup lifecycle into snapshot-phase + restore-phase hooks with explicit mode handling.
+   - **Lesson**: Snapshot-ready deployments need phase-aware init design, not a single monolithic startup hook.
+
+2. **Problem**: Repeated similar debate prompts paid retrieval cost repeatedly.
+   - **Why**: RAG retrieval had persistent index cache, but no short-lived query-result cache.
+   - **Resolution**: Added bounded TTL query cache with deterministic keying from challenge + differential context.
+   - **Workaround**: Tune TTL/entry limits if stale context or memory pressure appears.
+
+## [2026-02-22] Session 23 — Token Budget Pre-Clamp, Endpoint Speed Tuning, and Cost-Aware Warmup
+
+### Backend (modal_backend)
+
+#### Changed
+- **vLLM pre-clamp before first request** (`modal_backend/app.py`, `modal_backend/gemini_orchestrator_modal.py`):
+  - Added estimated input-token budgeting to clamp `max_tokens` proactively before first call.
+  - Kept existing overflow retry logic as fallback.
+- **Token budget tuning for latency/quality balance**:
+  - `/differential`: `3072 -> 1792` default, retry down to `1536`, concise retry path at `1280`.
+  - `/summary`: `3072 -> 1536` default, concise retry path at `1152`.
+  - Debate MedGemma fallback: `2048 -> 1200` (retry `1024`).
+  - Orchestrator MedGemma query default now pre-clamped from a lower target (`1200`).
+  - `/analyze-image`: `768 -> 512` (retry `320`).
+- **Context compaction**:
+  - Added summary-specific debate round compaction (latest 4 rounds, capped challenge/response lengths).
+  - Added truncation caps for summary and differential prompt sections (history/labs/differential/rounds).
+  - `/analyze-image` prompt now uses compact triage summary and tighter concise-output instructions.
+- **RAG retrieval relevance hardening** (`modal_backend/app.py`):
+  - Debate retrieval call lowered to `top_k=8`.
+  - Added lightweight topic hints from challenge + differential names.
+  - Added diversity selector (limits repeated topic/source chunks) before prompt injection.
+- **Runtime/cost config**:
+  - Modal `scaledown_window`: `600 -> 300`.
+  - Replaced deprecated `TRANSFORMERS_CACHE` env with `HF_HOME` in Modal image setup.
+
+### Frontend
+
+#### Changed
+- **Cost-aware warmup** (`frontend/lib/useWarmup.ts`, `frontend/components/WarmupToast.tsx`, `frontend/app/page.tsx`):
+  - Warmup can now be intent-based via `NEXT_PUBLIC_WARMUP_AUTOSTART`.
+  - Upload page now starts warmup on Analyze action (on-demand).
+  - Added warmup poll cap (default 5 attempts) and paused-state toast copy for credit-saving behavior.
+- **Prompt payload compaction from UI**:
+  - Upload flow now caps image-context text injected into differential input (`frontend/app/page.tsx`).
+  - Summary request now sends compacted recent debate rounds (`frontend/app/summary/page.tsx`).
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: vLLM overflow retries were still happening after endpoint-level retry logic existed.
+   - **Why**: Budgets were only reduced after receiving a 400 overflow response.
+   - **Resolution**: Added proactive pre-clamp using estimated input-token sizing before the first vLLM call.
+   - **Lesson**: First-pass token budgeting should be preventative, not purely reactive.
+
+2. **Problem**: Speed optimization risked reducing answer quality too aggressively.
+   - **Why**: Lower max token caps can truncate structured JSON outputs.
+   - **Resolution**: Used balanced caps + concise retry prompts only when truncation is likely.
+   - **Lesson**: Pair lower budgets with explicit compact-output constraints and targeted retries.
+
+3. **Problem**: Warmup strategy needed to minimize credit burn while preserving usability for unpredictable judge timing.
+   - **Why**: Always-on or frequent auto warmup can consume credits during inactivity windows.
+   - **Resolution**: Switched warmup to env-controlled intent-based mode and capped warmup polling attempts.
+   - **Workaround**: Keep manual/on-demand warmup before active demo/testing sessions.
+
 ## [2026-02-22] Session 22 — Modal/Vercel Deployment Track Consolidation
 
 ### Scope

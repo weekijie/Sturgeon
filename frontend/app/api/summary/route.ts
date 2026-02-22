@@ -4,6 +4,9 @@ import { copyRateLimitHeaders } from "../utils";
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 const TIMEOUT_MS = 180000; // 3 minutes for summary (complex cases take longer)
 
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

@@ -12,6 +12,7 @@ This is the current deployment reference for the Modal backend and Vercel fronte
   - FastAPI routes exposed through `@modal.asgi_app()`
 - Persistent volumes:
   - `medgemma-cache` for model weights
+  - `vllm-cache` for vLLM runtime/cache artifacts
   - `chroma-db` for RAG cache/index
 
 ## Current Production Config
@@ -20,8 +21,11 @@ From `modal_backend/app.py`:
 
 - `gpu="L4"`
 - `timeout=600`
-- `scaledown_window=600`
-- `max_containers=1`
+- `scaledown_window=300`
+- `max_containers=MODAL_MAX_CONTAINERS` (default `1`)
+- `@modal.concurrent(max_inputs=MODAL_MAX_INPUTS, target_inputs=MODAL_TARGET_INPUTS)`
+- `enable_memory_snapshot=True` (default)
+- `experimental_options={"enable_gpu_snapshot": True}` when `ENABLE_GPU_SNAPSHOT=1`
 - vLLM flags include:
   - `--max-model-len 4096`
   - `--gpu-memory-utilization 0.70`
@@ -29,13 +33,19 @@ From `modal_backend/app.py`:
 
 Why this matters:
 
-- `max_containers=1` prevents cold-start autoscaling fan-out.
+- Input concurrency keeps lightweight routes responsive while long inference runs.
 - `--enforce-eager` gives more predictable startup behavior for this workload.
-- 10-minute scaledown window helps avoid repeated cold starts during demos.
+- 5-minute scaledown window trims idle spend while keeping warm sessions practical.
+- CPU memory snapshots are enabled by default; GPU snapshots are opt-in.
+
+Current recommendation:
+
+- Keep `ENABLE_GPU_SNAPSHOT=0` in production unless explicitly testing GPU snapshot alpha behavior.
 
 ## Exposed Backend Endpoints
 
 - `GET /health`
+- `GET /vllm-metrics` (debug queue/throughput signals)
 - `GET /rag-status`
 - `POST /extract-labs`
 - `POST /extract-labs-file`
@@ -58,6 +68,16 @@ Modal secrets expected by backend:
 
 - `huggingface-token` with `HF_TOKEN`
 - `gemini-api-key` with `GEMINI_API_KEY`
+
+Optional backend env vars:
+
+- `ENABLE_MEMORY_SNAPSHOT` (`1`/`0`, default `1`)
+- `ENABLE_GPU_SNAPSHOT` (`1`/`0`, default `0`, alpha)
+- `RAG_CACHE_TTL_SECONDS` (default `900`)
+- `RAG_CACHE_MAX_ENTRIES` (default `256`)
+- `MODAL_MAX_CONTAINERS` (default `1`)
+- `MODAL_MAX_INPUTS` (default `8`)
+- `MODAL_TARGET_INPUTS` (default `4`)
 
 Vercel environment variable expected by frontend:
 
@@ -82,6 +102,17 @@ After deploy:
 1. Verify backend health endpoint responds.
 2. Verify frontend can call backend via `BACKEND_URL`.
 3. Run one full flow: upload -> differential -> debate -> summary.
+4. Run `logchecklist.md` against Modal + Vercel logs.
+
+## Next Session Patch Draft
+
+For tomorrow's follow-up implementation, use `NEXT_PATCH_PLAN.md`.
+
+Planned focus:
+
+- Clamp RAG retrieval query length before retriever call (avoid >500-char blocks)
+- Reduce differential/summary concise-retry frequency via modest token rebalance
+- Add retry/block counters in `/health` for fast post-deploy verification
 
 ## Cold Start Strategy
 
@@ -169,11 +200,13 @@ If cold starts feel excessive:
 - This setup is optimized for demo/competition usage, not always-on latency.
 - Main cost controls currently in use:
   - serverless scale-to-zero
-  - `scaledown_window=600`
+  - `scaledown_window=300`
   - single-container cap during cold start
+  - CPU snapshot default + optional GPU snapshot for cold-start reduction
 
 ## Source of Truth
 
 - Runtime behavior: `modal_backend/app.py`
 - Orchestrator behavior: `modal_backend/gemini_orchestrator_modal.py`
 - Session history and fixes: `CHANGELOG.md`
+- Next patch queue: `NEXT_PATCH_PLAN.md`

@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { copyRateLimitHeaders } from "../utils";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
-const TIMEOUT_MS = 180000; // 3 minutes for differential (complex cases need more time)
+const TIMEOUT_MS = 295000; // allow queue + retry path without premature frontend timeout
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {

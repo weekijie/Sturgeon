@@ -6,6 +6,7 @@ const INITIAL_POLL_DELAY = 0; // Immediate first ping to trigger cold start
 const POLL_INTERVALS = [20000, 30000, 45000]; // Backoff: 20s → 30s → 45s (cap)
 const MAX_BACKOFF_INDEX = POLL_INTERVALS.length - 1;
 const REQUEST_TIMEOUT = 15000; // 15s timeout per request
+const DEFAULT_MAX_ATTEMPTS = 5;
 
 export type WarmupStatus = "idle" | "warming" | "ready" | "error";
 
@@ -17,11 +18,12 @@ interface UseWarmupResult {
   startWarmup: () => void;
 }
 
-export function useWarmup(autoStart = true): UseWarmupResult {
+export function useWarmup(autoStart = true, maxAttempts = DEFAULT_MAX_ATTEMPTS): UseWarmupResult {
   const [status, setStatus] = useState<WarmupStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const inFlightRef = useRef(false);
   const backoffIndexRef = useRef(0);
+  const attemptCountRef = useRef(0);
   const mountedRef = useRef(true);
 
   const checkHealth = useCallback(async (): Promise<boolean> => {
@@ -53,10 +55,11 @@ export function useWarmup(autoStart = true): UseWarmupResult {
   }, []);
 
   const startWarmup = useCallback(() => {
-    if (status !== "idle") return;
+    if (status === "warming") return;
     setStatus("warming");
     setError(null);
     backoffIndexRef.current = 0;
+    attemptCountRef.current = 0;
   }, [status]);
 
   useEffect(() => {
@@ -82,6 +85,13 @@ export function useWarmup(autoStart = true): UseWarmupResult {
         return;
       }
 
+      attemptCountRef.current += 1;
+      if (attemptCountRef.current >= maxAttempts) {
+        setStatus("error");
+        setError("Warmup checks paused to save GPU credits. Warmup will retry when you run analysis.");
+        return;
+      }
+
       const interval = POLL_INTERVALS[backoffIndexRef.current];
       if (backoffIndexRef.current < MAX_BACKOFF_INDEX) {
         backoffIndexRef.current++;
@@ -99,7 +109,7 @@ export function useWarmup(autoStart = true): UseWarmupResult {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [status, checkHealth]);
+  }, [status, checkHealth, maxAttempts]);
 
   useEffect(() => {
     if (autoStart) {

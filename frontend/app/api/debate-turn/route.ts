@@ -6,6 +6,9 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 // 4-minute timeout for debate turns (backend has 180s timeout + overhead)
 const DEBATE_TIMEOUT_MS = 240000;
 
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

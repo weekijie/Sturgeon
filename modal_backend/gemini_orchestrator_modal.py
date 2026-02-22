@@ -321,6 +321,37 @@ class GeminiOrchestrator:
             "parameter=input_tokens" in error_message
             or ("maximum context length" in error_message and "input tokens" in error_message)
         )
+
+    @staticmethod
+    def _estimate_input_tokens(messages: list[dict]) -> int:
+        chars = 0
+        for message in messages:
+            chars += 24
+            content = message.get("content")
+            if isinstance(content, str):
+                chars += len(content)
+            elif isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        chars += len(str(part.get("text", "")))
+                    else:
+                        chars += len(str(part))
+        return max(1, int(chars / 3.4))
+
+    def _preclamp_max_tokens(self, messages: list[dict], requested_max_tokens: int) -> int:
+        model_max_len = 4096
+        safe_margin = 96
+        estimated_input_tokens = self._estimate_input_tokens(messages)
+        available = model_max_len - estimated_input_tokens - safe_margin
+        effective = max(128, min(requested_max_tokens, available))
+        if effective < requested_max_tokens:
+            logger.info(
+                "Orchestrator pre-clamped MedGemma max tokens (%s -> %s, est input=%s)",
+                requested_max_tokens,
+                effective,
+                estimated_input_tokens,
+            )
+        return effective
     
     def query_medgemma(self, question: str, clinical_context: str) -> str:
         """Send question to MedGemma via vLLM."""
@@ -347,7 +378,7 @@ Provide a focused, evidence-based analysis."""
 
         messages = _build_messages(compact_context)
 
-        requested_max_tokens = 2048
+        requested_max_tokens = self._preclamp_max_tokens(messages, 1200)
         last_error = "Unknown vLLM error"
         compacted_for_input_overflow = False
 
@@ -380,18 +411,19 @@ Provide a focused, evidence-based analysis."""
             retry_max_tokens = self._infer_retry_max_tokens(error_message, requested_max_tokens)
 
             if retry_max_tokens and attempt == 0:
+                preclamped_retry = self._preclamp_max_tokens(messages, retry_max_tokens)
                 logger.warning(
                     "Orchestrator MedGemma query exceeded token budget; retrying (%s -> %s)",
                     requested_max_tokens,
-                    retry_max_tokens,
+                    preclamped_retry,
                 )
-                requested_max_tokens = retry_max_tokens
+                requested_max_tokens = preclamped_retry
                 continue
 
             if self._is_input_overflow_error(error_message) and attempt == 0 and not compacted_for_input_overflow:
                 compact_context = self._truncate_text(compact_context, 1800)
                 messages = _build_messages(compact_context)
-                requested_max_tokens = min(requested_max_tokens, 1024)
+                requested_max_tokens = self._preclamp_max_tokens(messages, min(requested_max_tokens, 1024))
                 compacted_for_input_overflow = True
                 logger.warning("Orchestrator MedGemma query input too long; retrying with compacted context")
                 continue
@@ -444,7 +476,7 @@ Provide a focused, evidence-based analysis."""
             config=types.GenerateContentConfig(
                 system_instruction=ORCHESTRATOR_SYSTEM_INSTRUCTION,
                 temperature=0.5,
-                max_output_tokens=4096,
+                max_output_tokens=2048,
                 response_mime_type="application/json",
             ),
         )
