@@ -110,6 +110,9 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 - **📐 LLM-as-Judge Evaluation** - Faithfulness, relevance, comprehensiveness metrics
 - **⚡ Smart Rate Limiting** - Per-endpoint quota management with visual feedback
 - **💾 Session Persistence** - Cases saved locally, resume anytime
+- **🎙️ Voice-to-Text Input** - Dictate patient history and debate prompts (browser-native)
+- **📝 Streaming Chat UX** - Progressive response rendering + lightweight request stage indicator
+- **📋 One-Click Copy** - Copy AI responses from each message
 - **📱 Mobile Responsive** - Full functionality on any device
 - **🎯 MedSigLIP Triage** - Fast image classification before deep analysis
 
@@ -230,7 +233,7 @@ npm run dev
 1. **Upload Evidence**
    - Drag & drop medical images (X-rays, CT scans, dermatology photos)
    - Upload lab reports (PDF or TXT)
-   - Enter patient history
+   - Enter or dictate patient history
 
 2. **Review Analysis**
    - AI analyzes images using MedSigLIP + MedGemma
@@ -238,9 +241,10 @@ npm run dev
    - Initial differential generated with probabilities
 
 3. **Challenge the Diagnosis**
-   - Ask "What if this is autoimmune instead?"
-   - Request "What test would differentiate these?"
-   - Question the reasoning
+    - Ask "What if this is autoimmune instead?"
+    - Request "What test would differentiate these?"
+    - Question the reasoning
+    - Type or dictate your challenges (voice input supported on Chromium browsers)
 
 4. **Iterate**
    - AI updates differential based on your challenges
