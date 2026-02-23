@@ -1,7 +1,7 @@
 # Sturgeon - Complete Project Plan
 
 > **Deadline**: February 24, 2026 (~3 days remaining)  
-> **Status**: Ready to Submit
+> **Status**: Submission prep + production hardening/smoke validation complete (final polish pending)
 
 ---
 
@@ -111,7 +111,7 @@ _Source: [medgemma_hackathon_analysis.md](file:///C:/Users/weeki/.gemini/antigra
 | Backend      | Python FastAPI                        | Orchestration + inference             |
 | Medical AI   | **MedGemma 4B-it** (bfloat16)         | ALL medical reasoning + images        |
 | Orchestrator | **Gemini Flash** (Google AI API)      | Conversation management + debate flow |
-| Hosting      | Vercel (frontend) + local/Kaggle (AI) | Free deployment                       |
+| Hosting      | Vercel (frontend) + Modal (prod AI) + local/Kaggle (fallback) | Free/low-cost deployment |
 
 ### Why Dual-Model (MedGemma + Gemini)
 
@@ -511,12 +511,27 @@ Sturgeon/
 - [x] Refusal preamble stripping for cleaner MedGemma output
 - [x] RAG with clinical guidelines (14 documents)
 - [x] LLM-as-Judge evaluation framework
+- [x] Modal production backend (`modal_backend/`) with endpoint parity
+- [x] CPU snapshot default + GPU snapshot opt-in support
+- [x] Queue/timeout hardening (input concurrency + Vercel route maxDuration)
+- [x] vLLM observability endpoint (`/vllm-metrics`)
+- [x] NEXT_PATCH_PLAN follow-up patch (RAG clamp + retry tuning + `/health` counters)
+- [x] Deterministic PDF lab parsing before LLM fallback (`table-fast` / `table-full` / `flat-full`)
+- [x] Production smoke recheck passed on demo + local sample PDFs with extraction counter deltas
 - [ ] Fine-tune MedGemma for debate (stretch goal)
 - [ ] Demo video recorded (≤3 min)
 - [ ] Write-up completed (≤3 pages)
 - [x] GitHub repo cleaned up with README
-- [ ] Live demo on Vercel
+- [x] Live demo on Vercel
 - [ ] Submitted to Kaggle
+
+### Next Session Carry-Over
+
+- `NEXT_PATCH_PLAN.md` has been applied (Session 27) and follow-up hardening validated in Sessions 28-33.
+- Remaining priority is submission prep:
+  - Demo script (`DEMO_SCRIPT.md`)
+  - Demo video (<=3 min)
+  - Submission write-up + Kaggle upload
 
 ---
 
