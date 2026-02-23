@@ -9,6 +9,7 @@ import { RateLimitStatus, parseRateLimitHeaders, isRateLimitError } from "../com
 import { WarmupToast } from "../components/WarmupToast";
 import { useWarmup } from "../lib/useWarmup";
 import { demoCases, loadDemoImage, loadDemoLabFile, DemoCase } from "../lib/demo-cases";
+import { useSpeechToText } from "../lib/useSpeechToText";
 
 // Helper: is the file an image?
 function isImageFile(file: File): boolean {
@@ -71,6 +72,23 @@ function ExpandableText({
   );
 }
 
+const PATIENT_HISTORY_MAX_CHARS = 10000;
+
+function appendWithSpacing(currentText: string, incomingText: string, maxChars: number): string {
+  const normalizedCurrent = currentText.trim();
+  const normalizedIncoming = incomingText.trim();
+
+  if (!normalizedIncoming) {
+    return currentText;
+  }
+
+  const combined = normalizedCurrent
+    ? `${normalizedCurrent} ${normalizedIncoming}`
+    : normalizedIncoming;
+
+  return combined.slice(0, maxChars);
+}
+
 export default function UploadPage() {
   const router = useRouter();
   const {
@@ -97,6 +115,23 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [rateLimitInfo, setRateLimitInfo] = useState<{ limit: number; remaining: number; window: number; retryAfter?: number } | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
+
+  const {
+    isSupported: isHistoryVoiceSupported,
+    isRecording: isHistoryRecording,
+    interimTranscript: historyInterimTranscript,
+    error: historyVoiceError,
+    toggleListening: toggleHistoryListening,
+    stopListening: stopHistoryListening,
+    resetTranscript: resetHistoryTranscript,
+  } = useSpeechToText({
+    onFinalTranscript: (transcript: string) => {
+      setPatientHistoryLocal((prev) =>
+        appendWithSpacing(prev, transcript, PATIENT_HISTORY_MAX_CHARS),
+      );
+      if (error) setError(null);
+    },
+  });
 
   const hasAnyFile = imageFile || labFile;
 
@@ -219,6 +254,7 @@ export default function UploadPage() {
     resetCase();
 
     startWarmup();
+    stopHistoryListening();
     setIsAnalyzing(true);
     setError(null);
     setIsRateLimited(false);
@@ -797,24 +833,75 @@ export default function UploadPage() {
 
             {/* Patient History */}
             <div className="space-y-2">
-              <label
-                htmlFor="patient-history"
-                className="text-sm font-medium text-foreground"
-              >
-                Patient History{" "}
-                {hasAnyFile ? "(Optional — enhances analysis)" : "(Required)"}
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label
+                  htmlFor="patient-history"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Patient History{" "}
+                  {hasAnyFile ? "(Optional — enhances analysis)" : "(Required)"}
+                </label>
+                <div className="flex items-center gap-2">
+                  {isHistoryVoiceSupported && (
+                    <button
+                      type="button"
+                      onClick={toggleHistoryListening}
+                      disabled={isAnalyzing}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                        isHistoryRecording
+                          ? "border-teal bg-teal text-white"
+                          : "border-border text-muted hover:text-foreground hover:border-teal/60"
+                      }`}
+                      title={isHistoryRecording ? "Stop voice input" : "Start voice input"}
+                    >
+                      {isHistoryRecording ? "Stop Mic" : "Voice"}
+                    </button>
+                  )}
+                  {patientHistory.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPatientHistoryLocal("");
+                        resetHistoryTranscript();
+                        if (error) setError(null);
+                      }}
+                      className="text-xs px-3 py-1.5 rounded-full border border-border text-muted hover:text-danger hover:border-danger/60 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
               <textarea
                 id="patient-history"
                 placeholder="Enter relevant patient history, symptoms, medications, previous diagnoses..."
                 rows={4}
                 value={patientHistory}
+                maxLength={PATIENT_HISTORY_MAX_CHARS}
                 onChange={(e) => {
                   setPatientHistoryLocal(e.target.value);
                   if (error) setError(null);
                 }}
                 className="w-full rounded-lg bg-white border border-border px-4 py-3 text-sm text-foreground placeholder:text-muted/60 focus:outline-none focus:ring-2 focus:ring-teal/40 focus:border-teal resize-none transition-colors"
               />
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className={patientHistory.length > PATIENT_HISTORY_MAX_CHARS * 0.9 ? "text-warning" : "text-muted"}>
+                  {patientHistory.length}/{PATIENT_HISTORY_MAX_CHARS}
+                </span>
+                {isHistoryRecording && (
+                  <span className="text-teal font-medium">Listening...</span>
+                )}
+              </div>
+              {historyInterimTranscript && (
+                <p className="text-xs text-muted">
+                  Live transcript: {historyInterimTranscript}
+                </p>
+              )}
+              {historyVoiceError && (
+                <p className="text-xs text-warning">
+                  Voice input: {historyVoiceError}
+                </p>
+              )}
             </div>
 
             {/* Rate Limit Status */}

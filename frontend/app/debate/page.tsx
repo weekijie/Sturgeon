@@ -1,13 +1,74 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, Button, Input, Chip } from "@heroui/react";
+import { Card, Button, TextArea, Chip } from "@heroui/react";
 import { useCase, Diagnosis, Citation } from "../context/CaseContext";
 import Prose from "../../components/Prose";
 import { RateLimitStatus, parseRateLimitHeaders, isRateLimitError } from "../../components/RateLimitUI";
+import { useSpeechToText } from "../../lib/useSpeechToText";
 
 type Probability = "high" | "medium" | "low";
+type TimelineStage = "idle" | "retrieving" | "reasoning" | "finalizing";
+
+const CHALLENGE_MAX_CHARS = 5000;
+
+function appendWithSpacing(currentText: string, incomingText: string, maxChars: number): string {
+  const normalizedCurrent = currentText.trim();
+  const normalizedIncoming = incomingText.trim();
+
+  if (!normalizedIncoming) {
+    return currentText;
+  }
+
+  const combined = normalizedCurrent
+    ? `${normalizedCurrent} ${normalizedIncoming}`
+    : normalizedIncoming;
+
+  return combined.slice(0, maxChars);
+}
+
+function createMessageId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+interface ActiveStreamState {
+  messageId: string;
+  fullText: string;
+  timeoutId: number | null;
+  resolve: (() => void) | null;
+}
+
+function ClipboardIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M9 4h6m-5 0h4a2 2 0 0 1 2 2v1h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-1H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2V6a2 2 0 0 1 2-2Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="m5 12 4 4 10-10"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 // 1H: Probability bar with percentage
 function ProbabilityBar({ level, previousLevel }: { level: Probability; previousLevel?: Probability }) {
@@ -60,10 +121,12 @@ function GuidelineBadge({ hasGuidelines }: { hasGuidelines: boolean }) {
 }
 
 interface Message {
+  id: string;
   role: "user" | "ai" | "error";
   content: string;
   citations?: Citation[];
   has_guidelines?: boolean;
+  is_streaming?: boolean;
 }
 
 export default function DebatePage() {
@@ -81,15 +144,82 @@ export default function DebatePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false); // 1F: mobile sidebar toggle
   const [rateLimitInfo, setRateLimitInfo] = useState<{ limit: number; remaining: number; window: number; retryAfter?: number } | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [timelineStage, setTimelineStage] = useState<TimelineStage>("idle");
+  const [isStreamingResponse, setIsStreamingResponse] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const stageTimerRef = useRef<number | null>(null);
+  const activeStreamRef = useRef<ActiveStreamState | null>(null);
+
+  const {
+    isSupported: isVoiceSupported,
+    isRecording: isVoiceRecording,
+    interimTranscript,
+    error: voiceError,
+    toggleListening: toggleVoiceInput,
+    stopListening: stopVoiceInput,
+    resetTranscript: resetVoiceTranscript,
+  } = useSpeechToText({
+    onFinalTranscript: (transcript: string) => {
+      setInput((prev) => appendWithSpacing(prev, transcript, CHALLENGE_MAX_CHARS));
+    },
+  });
+
+  const clearStageTimer = useCallback(() => {
+    if (stageTimerRef.current !== null) {
+      window.clearTimeout(stageTimerRef.current);
+      stageTimerRef.current = null;
+    }
+  }, []);
+
+  const clearActiveStreamTimeout = useCallback(() => {
+    const activeStream = activeStreamRef.current;
+    if (!activeStream || activeStream.timeoutId === null) {
+      return;
+    }
+
+    window.clearTimeout(activeStream.timeoutId);
+    activeStream.timeoutId = null;
+  }, []);
+
+  const completeActiveStream = useCallback(() => {
+    const activeStream = activeStreamRef.current;
+    if (!activeStream) {
+      return;
+    }
+
+    clearActiveStreamTimeout();
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === activeStream.messageId
+          ? { ...msg, content: activeStream.fullText, is_streaming: false }
+          : msg,
+      ),
+    );
+    setIsStreamingResponse(false);
+
+    const done = activeStream.resolve;
+    activeStreamRef.current = null;
+    if (done) {
+      done();
+    }
+  }, [clearActiveStreamTimeout]);
 
   // Hydration guard: localStorage data isn't available during SSR
   useEffect(() => setHasMounted(true), []);
 
-  // Auto-scroll to latest message
+  // Auto-scroll to latest message without per-token smooth scroll jank
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages.length, isLoading]);
+
+  useEffect(() => {
+    return () => {
+      clearStageTimer();
+      clearActiveStreamTimeout();
+      stopVoiceInput();
+    };
+  }, [clearActiveStreamTimeout, clearStageTimer, stopVoiceInput]);
 
   // Initialize with differential from context (run once on mount)
   const didInit = useRef(false);
@@ -114,11 +244,12 @@ export default function DebatePage() {
       initMsg += ` Challenge my reasoning or ask about specific aspects of the differential.`;
       
       // Reconstruct messages from persisted debate rounds (survives page refresh)
-      const restoredMessages: Message[] = [{ role: "ai", content: initMsg }];
+      const restoredMessages: Message[] = [{ id: createMessageId(), role: "ai", content: initMsg }];
       if (caseData.debateRounds.length > 0) {
         for (const round of caseData.debateRounds) {
-          restoredMessages.push({ role: "user", content: round.user_challenge });
+          restoredMessages.push({ id: createMessageId(), role: "user", content: round.user_challenge });
           restoredMessages.push({ 
+            id: createMessageId(),
             role: "ai", 
             content: round.ai_response,
             citations: round.citations,
@@ -135,9 +266,126 @@ export default function DebatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const streamAiMessage = useCallback(
+    (messageId: string, fullText: string) =>
+      new Promise<void>((resolve) => {
+        completeActiveStream();
+
+        if (!fullText) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === messageId
+                ? { ...msg, content: fullText, is_streaming: false }
+                : msg,
+            ),
+          );
+          setIsStreamingResponse(false);
+          resolve();
+          return;
+        }
+
+        const totalChars = fullText.length;
+        const targetCharsPerSecond = 60;
+        const minDurationMs = 700;
+        const maxDurationMs = 7000;
+        const desiredDurationMs = Math.max(
+          minDurationMs,
+          Math.min(maxDurationMs, (totalChars / targetCharsPerSecond) * 1000),
+        );
+
+        const streamState: ActiveStreamState = {
+          messageId,
+          fullText,
+          timeoutId: null,
+          resolve,
+        };
+        activeStreamRef.current = streamState;
+
+        let cursor = 0;
+        let pauseBudgetMs = 0;
+        const startAt = performance.now();
+
+        const renderChunk = () => {
+          const activeStream = activeStreamRef.current;
+          if (!activeStream || activeStream.messageId !== messageId) {
+            resolve();
+            return;
+          }
+
+          const elapsedMs = performance.now() - startAt - pauseBudgetMs;
+          const progress = Math.max(0, Math.min(1, elapsedMs / desiredDurationMs));
+          const targetCursor = Math.max(
+            cursor + 2,
+            Math.min(totalChars, Math.floor(progress * totalChars)),
+          );
+
+          const nextText = fullText.slice(0, targetCursor);
+          const appended = fullText.slice(cursor, targetCursor);
+          const punctuationMatches = appended.match(/[,.!?;:]/g);
+          if (punctuationMatches?.length) {
+            pauseBudgetMs += Math.min(90, punctuationMatches.length * 20);
+          }
+
+          cursor = targetCursor;
+
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === messageId ? { ...msg, content: nextText } : msg,
+            ),
+          );
+
+          if (cursor >= totalChars) {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === messageId
+                  ? { ...msg, content: fullText, is_streaming: false }
+                  : msg,
+              ),
+            );
+            clearActiveStreamTimeout();
+            activeStreamRef.current = null;
+            setIsStreamingResponse(false);
+            resolve();
+            return;
+          }
+
+          const delay = appended.match(/[,.!?]/)
+            ? 55
+            : appended.match(/[;:]/)
+              ? 48
+              : 35;
+          streamState.timeoutId = window.setTimeout(renderChunk, delay);
+        };
+
+        setIsStreamingResponse(true);
+        renderChunk();
+      }),
+    [clearActiveStreamTimeout, completeActiveStream],
+  );
+
+  const handleCopyMessage = useCallback(async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      window.setTimeout(() => {
+        setCopiedMessageId((prev) => (prev === messageId ? null : prev));
+      }, 1500);
+    } catch (copyError) {
+      console.error("Failed to copy message", copyError);
+    }
+  }, []);
+
   const doSend = async (userMessage: string) => {
-    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    completeActiveStream();
+    stopVoiceInput();
+    resetVoiceTranscript();
+    setMessages((prev) => [...prev, { id: createMessageId(), role: "user", content: userMessage }]);
     setIsLoading(true);
+    setTimelineStage("retrieving");
+    clearStageTimer();
+    stageTimerRef.current = window.setTimeout(() => {
+      setTimelineStage((prev) => (prev === "retrieving" ? "reasoning" : prev));
+    }, 900);
 
     try {
       const imageContext = caseData.imageAnalysis
@@ -206,14 +454,24 @@ export default function DebatePage() {
       // RAG: Extract citations from response
       const citations: Citation[] = data.citations || [];
       const hasGuidelines = data.has_guidelines || false;
-      
-      // Add AI response to messages (with citations)
-      setMessages((prev) => [...prev, { 
-        role: "ai", 
-        content: aiText,
-        citations,
-        has_guidelines: hasGuidelines
-      }]);
+
+      setTimelineStage("finalizing");
+      clearStageTimer();
+
+      const aiMessageId = createMessageId();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: aiMessageId,
+          role: "ai",
+          content: "",
+          citations,
+          has_guidelines: hasGuidelines,
+          is_streaming: true,
+        },
+      ]);
+
+      await streamAiMessage(aiMessageId, aiText);
       
       // 1H: Track previous differential for change highlighting
       if (data.updated_differential?.length > 0) {
@@ -225,17 +483,21 @@ export default function DebatePage() {
       // Store debate round in context (with RAG citations)
       addDebateRound({
         user_challenge: userMessage,
-        ai_response: data.ai_response,
+        ai_response: aiText,
         citations,
         has_guidelines: hasGuidelines
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred.";
-      setMessages((prev) => [...prev, { 
-        role: "error", 
+      setMessages((prev) => [...prev, {
+        id: createMessageId(),
+        role: "error",
         content: errorMessage,
       }]);
     } finally {
+      clearStageTimer();
+      setTimelineStage("idle");
+      setIsStreamingResponse(false);
       setIsLoading(false);
     }
   };
@@ -279,9 +541,9 @@ export default function DebatePage() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col bg-white">
+    <main className="h-[100dvh] overflow-hidden flex flex-col bg-white">
       {/* Header */}
-      <header className="sticky top-[3px] z-50 border-b border-border bg-white px-4 md:px-6 py-4 shadow-sm">
+      <header className="shrink-0 z-50 border-b border-border bg-white px-4 md:px-6 py-4 shadow-sm">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
             {/* 1F: Mobile sidebar toggle */}
@@ -315,7 +577,7 @@ export default function DebatePage() {
       </header>
 
       {/* Main Content - Split Layout */}
-      <div className="flex-1 flex max-w-7xl mx-auto w-full relative">
+      <div className="flex-1 min-h-0 overflow-hidden flex max-w-7xl mx-auto w-full relative">
         {/* 1F: Mobile sidebar overlay */}
         {sidebarOpen && (
           <div 
@@ -327,8 +589,7 @@ export default function DebatePage() {
         {/* Left Panel - Differential Diagnoses */}
         <aside className={`
           w-[85vw] max-w-[320px] md:w-80 border-r border-border bg-surface p-4 pt-6 md:pt-4 overflow-y-auto 
-          h-[calc(100vh-52px-3px)] md:sticky md:top-[calc(52px+3px)]
-          fixed md:static z-40 md:z-auto top-[55px] left-0
+          fixed md:relative z-40 md:z-auto top-[55px] bottom-0 left-0 md:top-0 md:bottom-0 md:left-0 md:h-full
           transition-transform duration-200 ease-in-out
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         `}>
@@ -466,7 +727,7 @@ export default function DebatePage() {
         </aside>
 
         {/* Right Panel - Chat */}
-        <section className="flex-1 flex flex-col min-w-0 h-[calc(100vh-52px-3px)]">
+        <section className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           {/* Rate Limit Status */}
           {(rateLimitInfo || isRateLimited) && (
             <div className="px-3 sm:px-4 md:px-6 pt-3">
@@ -475,10 +736,10 @@ export default function DebatePage() {
           )}
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-4 min-h-0">
-            {messages.map((msg, idx) => (
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 space-y-4 min-h-0">
+            {messages.map((msg) => (
               <div
-                key={idx}
+                key={msg.id}
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div className="max-w-[92%] sm:max-w-[85%] md:max-w-[70%] min-w-0">
@@ -505,11 +766,38 @@ export default function DebatePage() {
                     <div className="bg-accent text-white rounded-xl px-4 py-3">
                       <p className="text-sm leading-relaxed wrap-break-word">{msg.content}</p>
                     </div>
-                  ) : (
-                    /* AI message */
-                    <div className="bg-surface border-l-3 border-l-teal rounded-xl px-4 py-3">
-                      <Prose content={msg.content} />
-                      
+                    ) : (
+                      /* AI message */
+                      <div className="group relative bg-surface border-l-3 border-l-teal rounded-xl px-4 py-3 pr-11">
+                        {msg.is_streaming ? (
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
+                        ) : (
+                          <Prose content={msg.content} />
+                        )}
+                        <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                          {copiedMessageId === msg.id && (
+                            <span className="text-[10px] text-teal font-medium">Copied</span>
+                          )}
+                          <Button
+                            isIconOnly
+                            size="sm"
+                            variant="outline"
+                            onPress={() => handleCopyMessage(msg.id, msg.content)}
+                            aria-label="Copy response"
+                            className={`h-7 w-7 min-w-7 rounded-md border transition-opacity ${
+                              copiedMessageId === msg.id
+                                ? "border-teal/40 text-teal bg-teal-light/60 opacity-100"
+                                : "border-border/70 bg-white/85 text-foreground/80 opacity-75 md:opacity-35 md:group-hover:opacity-90 md:group-focus-within:opacity-90"
+                            }`}
+                          >
+                            {copiedMessageId === msg.id ? (
+                              <CheckIcon className="h-3.5 w-3.5" />
+                            ) : (
+                              <ClipboardIcon className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </div>
+                        
                       {/* RAG: Guideline badge and citations */}
                       {msg.has_guidelines && msg.citations && msg.citations.filter((c) => (c.url || "").startsWith("https://") || (c.url || "").startsWith("http://")).length > 0 && (
                         <div className="mt-3 pt-3 border-t border-teal/20">
@@ -543,7 +831,7 @@ export default function DebatePage() {
                 </div>
               </div>
             ))}
-            {isLoading && (
+            {isLoading && !isStreamingResponse && (
               <div className="flex justify-start">
                 <div className="max-w-[85%] md:max-w-[70%]">
                   <p className="text-[10px] font-medium uppercase tracking-wider mb-1 text-teal">
@@ -580,7 +868,10 @@ export default function DebatePage() {
             {/* 1B: Suggested challenge prompts */}
             {!isLoading && messages.length > 0 && (
               <div className="max-w-4xl mx-auto mb-3 overflow-hidden">
-                <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-thin scrollbar-thumb-teal/30 scrollbar-track-transparent hover:scrollbar-thumb-teal/50 snap-x snap-mandatory" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div
+                  className="flex gap-2 overflow-x-auto pb-2 px-1 snap-x snap-mandatory scrollbar-thin scrollbar-thumb-teal/30 scrollbar-track-transparent hover:scrollbar-thumb-teal/50"
+                  style={{ WebkitOverflowScrolling: "touch" }}
+                >
                   {SUGGESTED_PROMPTS.map((prompt, i) => (
                     <button
                       key={i}
@@ -594,24 +885,117 @@ export default function DebatePage() {
               </div>
             )}
 
-            <div className="flex gap-2 sm:gap-3 max-w-4xl mx-auto">
-              <Input
-                className="flex-1 min-w-0"
+            {(isLoading || isStreamingResponse) && timelineStage !== "idle" && (
+              <div className="max-w-4xl mx-auto mb-2 flex items-center gap-2 text-[10px] text-muted">
+                {([
+                  ["retrieving", "retrieving guidelines"],
+                  ["reasoning", "reasoning"],
+                  ["finalizing", "finalizing"],
+                ] as const).map(([stage, label], index) => {
+                  const order: TimelineStage[] = ["retrieving", "reasoning", "finalizing"];
+                  const activeIndex = order.indexOf(timelineStage);
+                  const complete = index < activeIndex;
+                  const active = index === activeIndex;
+                  const showConnector = index < order.length - 1;
+
+                  return (
+                    <div key={stage} className="flex items-center gap-2">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full transition-colors ${
+                          active
+                            ? "bg-teal"
+                            : complete
+                              ? "bg-teal/45"
+                              : "bg-border"
+                        }`}
+                      />
+                      <span
+                        className={`tracking-wide ${
+                          active ? "text-foreground" : complete ? "text-muted" : "text-muted/80"
+                        }`}
+                      >
+                        {label}
+                      </span>
+                      {showConnector && <span className="h-px w-3 bg-border" />}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="max-w-4xl mx-auto space-y-2">
+              <TextArea
+                aria-label="Challenge the diagnosis"
+                className="w-full"
                 placeholder="Challenge the diagnosis..."
                 value={input}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
-                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && handleSend()}
+                rows={3}
+                maxLength={CHALLENGE_MAX_CHARS}
                 disabled={isLoading}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                  setInput(e.target.value.slice(0, CHALLENGE_MAX_CHARS));
+                }}
+                onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
               />
-              <Button 
-                variant="primary" 
-                onPress={handleSend} 
-                isDisabled={isLoading || !input.trim()}
-                className="bg-teal text-white hover:bg-teal/90 font-semibold px-3 sm:px-4 md:px-6 rounded-lg shrink-0"
-              >
-                <span className="hidden sm:inline">Send</span>
-                <span className="sm:hidden">→</span>
-              </Button>
+
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2 text-xs text-muted">
+                  <span className={input.length > CHALLENGE_MAX_CHARS * 0.9 ? "text-warning" : "text-muted"}>
+                    {input.length}/{CHALLENGE_MAX_CHARS}
+                  </span>
+                  {isVoiceRecording && (
+                    <span className="text-teal font-medium">Listening...</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {isVoiceSupported && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onPress={toggleVoiceInput}
+                      isDisabled={isLoading}
+                      className={isVoiceRecording ? "border-teal text-teal" : ""}
+                    >
+                      {isVoiceRecording ? "Stop Mic" : "Voice"}
+                    </Button>
+                  )}
+
+                  {input.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onPress={() => {
+                        setInput("");
+                        resetVoiceTranscript();
+                      }}
+                      isDisabled={isLoading}
+                    >
+                      Clear
+                    </Button>
+                  )}
+
+                  <Button
+                    variant="primary"
+                    onPress={handleSend}
+                    isDisabled={isLoading || !input.trim()}
+                    className="bg-teal text-white hover:bg-teal/90 font-semibold px-3 sm:px-4 md:px-6 rounded-lg shrink-0"
+                  >
+                    <span className="hidden sm:inline">Send</span>
+                    <span className="sm:hidden">→</span>
+                  </Button>
+                </div>
+              </div>
+
+              {interimTranscript && (
+                <p className="text-xs text-muted">Live transcript: {interimTranscript}</p>
+              )}
+              {voiceError && <p className="text-xs text-warning">Voice input: {voiceError}</p>}
             </div>
           </div>
         </section>
