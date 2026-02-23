@@ -252,9 +252,9 @@ npm run dev
    - Clinical guidelines cited when relevant
 
 5. **Final Summary**
-   - Consensus diagnosis with confidence level
-   - Full reasoning chain documented
-   - Next steps and ruled-out conditions
+    - Consensus diagnosis with confidence level
+    - Full reasoning chain documented
+    - Next steps and ruled-out conditions
 
 ### Cold Start Note
 

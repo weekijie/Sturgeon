@@ -2298,6 +2298,7 @@ Keep each bullet under 18 words and avoid long prose."""
                     )
 
                 data = extract_json(content)
+                final_diagnosis = data.get("final_diagnosis", "Unable to determine")
 
                 ruled_out_raw = data.get("ruled_out", [])
                 ruled_out = []
@@ -2310,7 +2311,7 @@ Keep each bullet under 18 words and avoid long prose."""
                         ruled_out.append(str(item))
 
                 response_data = SummaryResponse(
-                    final_diagnosis=data.get("final_diagnosis", "Unable to determine"),
+                    final_diagnosis=final_diagnosis,
                     confidence=data.get("confidence", "low"),
                     confidence_percent=data.get("confidence_percent"),
                     reasoning_chain=data.get("reasoning_chain", []),

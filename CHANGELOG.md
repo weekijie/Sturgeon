@@ -2,6 +2,130 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-02-23] Session 39 - Revert ICD-10-CM Summary Feature (Rollback)
+
+### Scope
+
+- Rolled back the ICD-10-CM summary feature end-to-end due to production risk and `/summary` runtime instability during prompt formatting.
+
+### Backend
+
+#### Reverted
+- Removed ICD-10-CM summary response fields from models:
+  - `ai-service/models.py`
+  - `modal_backend/models.py`
+- Removed ICD-10-CM prompt requirements and JSON example sections from:
+  - `ai-service/prompts.py`
+  - `modal_backend/prompts.py`
+- Removed ICD-10-CM summary wiring from endpoints:
+  - `ai-service/main.py`
+  - `modal_backend/app.py`
+- Removed ICD utility modules:
+  - `ai-service/coding_utils.py`
+  - `modal_backend/coding_utils.py`
+- Removed ICD utility tests:
+  - `ai-service/tests/test_icd10_coding.py`
+
+### Frontend
+
+#### Reverted
+- Removed ICD-10-CM panel and related fields from `frontend/app/summary/page.tsx`.
+
+### Documentation
+
+#### Updated
+- Removed ICD-10-CM feature mentions from `README.md`.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: `/summary` in Modal production intermittently failed with template-format KeyError after ICD prompt changes.
+   - **Why**: Prompt template safety around JSON examples added unnecessary operational risk under deployment iteration pressure.
+   - **Resolution**: Rolled back the ICD-10-CM feature completely to restore stable summary behavior.
+   - **Lesson**: Billing/coding features should be introduced only when deployment/test cycle bandwidth is available for full hardening.
+
+## [2026-02-23] Session 38 - Summary Prompt Brace Escape Hotfix (ICD-10-CM JSON Example)
+
+### Backend Hotfix
+
+#### Fixed
+- **`/summary` runtime KeyError from prompt formatting** (`ai-service/prompts.py`, `modal_backend/prompts.py`):
+  - Escaped inner JSON object braces in ICD-10-CM example block (`{`/`}` -> `{{`/`}}`) inside `SUMMARY_PROMPT`.
+  - Prevents Python `.format(...)` from interpreting JSON example keys (e.g., `"code"`) as template placeholders.
+
+### Verification
+- `.venv/Scripts/python -c "... ai-service SUMMARY_PROMPT.format(...) ..."`
+  - Passes (`ai-service SUMMARY_PROMPT format OK`).
+- `.venv/Scripts/python -c "... modal_backend SUMMARY_PROMPT.format(...) ..."`
+  - Passes (`modal_backend SUMMARY_PROMPT format OK`).
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Production `/summary` returned `500` with `KeyError: '\n      "code"'` immediately after ICD-10-CM prompt update.
+   - **Why**: JSON example in prompt used single braces within a Python `.format` template, so prompt rendering treated JSON keys as format placeholders.
+   - **Resolution**: Escaped inner braces in both local and modal prompt templates.
+   - **Lesson**: Any literal JSON inside `.format` templates must use doubled braces at all nesting levels.
+
+## [2026-02-23] Session 37 - ICD-10-CM Suggestions on Final Summary (Conservative Mode)
+
+### Backend
+
+#### Added
+- **ICD-10-CM coding utility module** (`ai-service/coding_utils.py`, `modal_backend/coding_utils.py`):
+  - Added conservative deterministic diagnosis-to-code mappings for common Sturgeon outputs (e.g., sepsis, pneumonia, melanoma, UTI, AKI).
+  - Added uncertainty guardrails (`possible`, `likely`, `rule out`, `?`, etc.) so uncertain diagnoses return no code suggestions.
+  - Added ICD-10-CM code format validation and model-suggestion filtering.
+  - Added shared coding disclaimer constant for response/UI display.
+
+#### Changed
+- **Summary response schema expanded** (`ai-service/models.py`, `modal_backend/models.py`):
+  - Added `icd10_cm_codes` list with structured fields (`code`, `description`, `rationale`, `confidence_percent`).
+  - Added `coding_disclaimer` response field.
+- **Summary prompt updated** (`ai-service/prompts.py`, `modal_backend/prompts.py`):
+  - Added explicit ICD-10-CM output requirements.
+  - Added hard rule not to code `ruled_out` diagnoses.
+  - Added uncertainty handling rule (empty `icd10_cm_codes` when diagnosis is uncertain).
+- **Summary endpoint integration** (`ai-service/main.py`, `modal_backend/app.py`):
+  - Post-processes summary output through conservative ICD-10-CM utility before returning response.
+  - Keeps summary success path intact even when no reliable coding suggestion is available.
+
+### Frontend
+
+#### Added
+- **Summary coding panel** (`frontend/app/summary/page.tsx`):
+  - Displays ICD-10-CM suggestions under final diagnosis when available.
+  - Shows code, description, rationale, and confidence.
+  - Falls back to a clear "no reliable suggestion" message when empty.
+  - Shows coding disclaimer in UI.
+
+### Tests & Verification
+- Added `ai-service/tests/test_icd10_coding.py` (9 tests):
+  - Code format validation
+  - Uncertainty detection
+  - Deterministic mapping behavior
+  - Model suggestion filtering
+- `.venv/Scripts/python -m pytest ai-service/tests/test_icd10_coding.py`
+  - 9 passed.
+- `.venv/Scripts/python -m py_compile ai-service/main.py modal_backend/app.py ai-service/coding_utils.py modal_backend/coding_utils.py`
+  - Passed.
+- `npm --prefix frontend run lint -- app/summary/page.tsx`
+  - Passed.
+- `npm --prefix frontend run build`
+  - Passed.
+
+### Documentation
+
+#### Updated
+- `README.md`:
+  - Added ICD-10-CM summary suggestions to key features.
+  - Updated workflow step to mention coding suggestions with coder-review disclaimer.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Coding uncertain diagnoses can produce misleading diagnosis-code suggestions.
+   - **Why**: ICD coding guidance for uncertain or ruled-out conditions varies by context, and direct model output can overstate certainty.
+   - **Resolution**: Added conservative uncertainty gating and deterministic validation layer; uncertain final diagnoses now return empty coding suggestions.
+   - **Lesson**: Billing-adjacent features should default to "no suggestion" over low-confidence guesses.
+
 ## [2026-02-23] Session 36 - Debate UX Follow-up (Snippet-like Copy, Scrollbar Restore, Stream + Jank Tuning)
 
 ### Frontend
