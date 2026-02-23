@@ -140,7 +140,7 @@ For production deployment (Modal + Vercel), see `DEPLOYMENT.md`.
 
 - **Node.js** 18+ 
 - **Python** 3.10+
-- **GPU** with 16GB+ VRAM (NVIDIA CUDA or AMD ROCm)
+- **GPU** with 8GB+ VRAM (NVIDIA CUDA or AMD ROCm)
 - **MedGemma Access** - [Request on HuggingFace](https://huggingface.co/google/medgemma-1.5-4b-it)
 - **Gemini API Key** (optional) - [Get free key](https://aistudio.google.com/apikey)
 
@@ -368,10 +368,6 @@ All endpoints return rate limit headers:
 - [x] 156 backend unit tests passing
 
 ### 🚧 In Progress
-
-- [ ] Demo video recording
-- [ ] Submission documentation
-- [ ] Vercel deployment setup
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
 
