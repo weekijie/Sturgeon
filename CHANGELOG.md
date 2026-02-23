@@ -2,6 +2,113 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-02-23] Session 36 - Debate UX Follow-up (Snippet-like Copy, Scrollbar Restore, Stream + Jank Tuning)
+
+### Frontend
+
+#### Changed
+- **Snippet-like copy affordance** (`frontend/app/debate/page.tsx`):
+  - Replaced prior text copy control with HeroUI `Button` icon-only copy action (`variant="outline"`) to mimic snippet-style affordance.
+  - Moved copy control to bottom-right overlay inside AI bubble (absolute positioning) to remove large vertical gap under message text.
+  - Preserved copy feedback (`Copied`) and accessible label (`aria-label="Copy response"`).
+- **Prompt scroller restored for desktop** (`frontend/app/debate/page.tsx`):
+  - Re-enabled visible horizontal scrollbar for suggested prompts using subtle thin scrollbar styling.
+  - Kept horizontal swipe/scroll behavior.
+- **Loading bubble duplication removed during streaming** (`frontend/app/debate/page.tsx`):
+  - Typing/loading bubble now hides once progressive AI streaming starts to avoid showing both states simultaneously.
+- **Streaming speed + smoothness tuning** (`frontend/app/debate/page.tsx`):
+  - Increased target streaming pace (`~60 chars/sec`) and tightened duration bounds (`700ms` to `7000ms`).
+  - Reduced punctuation pause weights for faster perceived output.
+  - Added lightweight streaming text render path (`is_streaming`) to avoid expensive markdown rendering every token update.
+  - Limited auto-scroll trigger to message count/loading changes (not every streaming content update) to reduce scroll jank.
+
+### Verification
+- `npm --prefix frontend run lint -- app/debate/page.tsx`
+  - Passes with existing `@next/next/no-img-element` warning in debate image preview.
+- `npm --prefix frontend run build`
+  - Production build and TypeScript checks passed.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: HeroUI `Button` type-check failed when passing `title` prop for copy control.
+   - **Why**: Current HeroUI v3 `ButtonRootProps` in this stack does not include `title` in accepted props.
+   - **Resolution**: Removed `title` and kept semantic accessibility via `aria-label`.
+   - **Lesson**: For HeroUI v3 beta components, rely on documented props and prefer `aria-*` attributes for accessibility metadata.
+
+## [2026-02-23] Session 35 - Debate UI Polish Pass (Timeline, Scrollbars, Copy UX, Stream Pace)
+
+### Frontend
+
+#### Changed
+- **Copy action redesign** (`frontend/app/debate/page.tsx`):
+  - Moved AI message copy control to the bottom-right of each AI bubble.
+  - Replaced text action with icon button (clipboard/check states) and subtle hover/focus opacity behavior.
+  - Preserved accessibility with `aria-label="Copy response"` and short `Copied` feedback.
+- **Latency timeline redesign** (`frontend/app/debate/page.tsx`):
+  - Replaced pill-style timeline chips with a minimal inline stepper (dot + label + connector) for a lighter clinical look.
+  - Kept only active-stage emphasis with muted completed/pending states.
+- **Scroll behavior cleanup** (`frontend/app/debate/page.tsx`):
+  - Constrained debate page to viewport height (`100dvh`) with overflow containment.
+  - Limited scrolling to intended regions (sidebar panel and chat message list).
+  - Hid suggested prompt horizontal scrollbar while preserving swipe/scroll interaction.
+  - Added message-region `overflow-x-hidden` to reduce accidental secondary scrollbars.
+- **Streaming pacing normalization** (`frontend/app/debate/page.tsx`):
+  - Replaced fixed interval/chunk streamer with time-based pacing (~40 chars/sec target).
+  - Added duration clamp (`1400ms` min, `12000ms` max) and punctuation-aware micro-pauses for more natural output cadence.
+  - Added safe active-stream completion path so a new send can fast-complete an in-flight rendered response cleanly.
+
+### Verification
+- `npm --prefix frontend run lint -- app/debate/page.tsx`
+  - Passes with existing `@next/next/no-img-element` warning in debate image preview.
+- `npm --prefix frontend run build`
+  - Production build and TypeScript checks passed.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Debate page showed noisy nested scrollbars and heavy timeline visuals in some cases.
+   - **Why**: Mixed viewport-height calculations (`calc(...)` + sticky/fixed regions) plus explicit visible horizontal prompt scrollbar produced stacked scroll surfaces.
+   - **Resolution**: Reworked layout to viewport-constrained container with explicit scroll ownership per panel and hidden horizontal scrollbar styling for prompt chips.
+   - **Lesson**: Split-pane chat UIs should assign one scroll owner per region and avoid combining sticky/fixed/viewport math unless strictly necessary.
+
+2. **Problem**: Streamed response effect rendered too quickly and felt unnatural.
+   - **Why**: Previous renderer used fixed timer with large per-tick chunk growth tied to message length, causing near-instant output on typical responses.
+   - **Resolution**: Switched to time-based pacing with a target character rate, duration clamp, and punctuation pause budget.
+   - **Lesson**: Perceived streaming quality is better controlled by time and cadence than static chunk size.
+
+## [2026-02-23] Session 34 - Voice Input + Clear Controls + Chat Streaming UX
+
+### Frontend
+
+#### Added
+- **Reusable speech-to-text hook** (`frontend/lib/useSpeechToText.ts`):
+  - Browser-native Web Speech API wrapper with support detection, start/stop/toggle controls, interim transcript, final transcript, and mapped microphone error messages.
+  - Graceful fallback when speech recognition is unavailable.
+- **Patient history voice + clear controls** (`frontend/app/page.tsx`):
+  - Added voice toggle (`Voice` / `Stop Mic`) and `Clear` button to Patient History input.
+  - Added patient history character counter (`0-10000`) aligned with backend sanitization limit.
+  - Added live transcript and voice error helper text below Patient History.
+- **Debate composer voice + clear controls** (`frontend/app/debate/page.tsx`):
+  - Replaced single-line `Input` with multiline HeroUI `TextArea` for better dictated input.
+  - Added voice toggle, clear input action, and challenge character counter (`0-5000`) aligned with backend sanitization limit.
+  - Added live transcript and voice error helper text in chat composer.
+- **Chat UX upgrades** (`frontend/app/debate/page.tsx`):
+  - Added copy-to-clipboard action on each AI message bubble with temporary `Copied` feedback.
+  - Added progressive response rendering (frontend streaming effect) to display AI text incrementally.
+  - Added latency timeline chips during requests: `retrieving guidelines -> reasoning -> finalizing`.
+
+### Verification
+- `npm --prefix frontend run lint -- app/page.tsx app/debate/page.tsx lib/useSpeechToText.ts`
+  - Passes with existing `@next/next/no-img-element` warnings in upload/debate previews.
+- `npm --prefix frontend run build`
+  - Production build and TypeScript checks passed.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Lint rule `react-hooks/set-state-in-effect` failed for speech support initialization.
+   - **Why**: `setIsSupported(...)` was called synchronously in a `useEffect` body.
+   - **Resolution**: Switched to lazy `useState` initialization for support detection and removed effect-time state writes.
+   - **Lesson**: In this codebase, hook state derived from stable browser capability checks should initialize lazily, not inside effect bodies.
+
 ## [2026-02-23] Session 33 - Post-Deploy Smoke Recheck (Demo + Local PDFs)
 
 ### Verification (Modal Production)
