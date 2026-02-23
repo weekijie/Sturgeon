@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { copyRateLimitHeaders } from "../utils";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
-const TIMEOUT_MS = 120000; // 2 minutes for lab extraction
+const TIMEOUT_MS = 295000; // align with long-running analyze/differential routes
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {

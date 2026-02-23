@@ -122,6 +122,11 @@ class SturgeonService:
         self.rag_cache_max_entries = int(os.getenv("RAG_CACHE_MAX_ENTRIES", "256"))
         self.rag_cache_hits = 0
         self.rag_cache_misses = 0
+        self.differential_concise_retry_count = 0
+        self.summary_concise_retry_count = 0
+        self.rag_query_blocked_count = 0
+        self.extract_labs_fast_path_count = 0
+        self.extract_labs_llm_fallback_count = 0
         self._servers_started = False
 
     def _start_servers_if_needed(self):
@@ -333,6 +338,7 @@ class SturgeonService:
 
         logger = StructuredLogger("api")
         rag_distance_threshold = 1.3
+        rag_query_max_chars = 480
         model_max_context = 4096
 
         fastapi_app = FastAPI(
@@ -679,6 +685,545 @@ class SturgeonService:
                 return ""
             return _truncate_text(context, max_chars)
 
+        def _compact_lab_report_text(raw_text: str, max_chars: int = 2200, max_lines: int = 120) -> str:
+            if not raw_text:
+                return ""
+
+            seen = set()
+            normalized_lines = []
+            for line in str(raw_text).splitlines():
+                compact = " ".join(line.split())
+                if not compact:
+                    continue
+                key = compact.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized_lines.append(compact)
+
+            if not normalized_lines:
+                return ""
+
+            anchor_terms = {
+                "laboratory report",
+                "complete blood count",
+                "blood chemistry",
+                "metabolic panel",
+                "biochemistry",
+                "inflammatory markers",
+                "lipid profile",
+                "thyroid function",
+                "notes",
+            }
+            lab_keywords = (
+                "wbc",
+                "rbc",
+                "hemoglobin",
+                "hematocrit",
+                "platelets",
+                "ldh",
+                "alkaline phosphatase",
+                "alt",
+                "ast",
+                "albumin",
+                "crp",
+                "esr",
+                "creatinine",
+                "bun",
+                "lactate",
+                "procalcitonin",
+                "glucose",
+                "cholesterol",
+                "triglyceride",
+                "hba1c",
+                "test",
+                "result",
+                "reference",
+                "interpretation",
+            )
+
+            filtered = []
+            for line in normalized_lines:
+                lower = line.lower()
+                if any(term in lower for term in anchor_terms):
+                    filtered.append(line)
+                    continue
+
+                has_numeric = bool(re.search(r"\d", line))
+                if has_numeric and ("|" in line or ":" in line or any(k in lower for k in lab_keywords)):
+                    filtered.append(line)
+
+            final_lines = filtered if filtered else normalized_lines
+            if len(final_lines) > max_lines:
+                final_lines = final_lines[:max_lines]
+
+            compact_text = "\n".join(final_lines)
+            if len(compact_text) > max_chars:
+                compact_text = compact_text[:max_chars].rstrip()
+            return compact_text
+
+        def _normalize_lab_status(status_text: str) -> str:
+            status = (status_text or "").strip().lower()
+            if status in {"high", "h", "elevated", "abnormal high", "above range", "positive"}:
+                return "high"
+            if status in {"low", "l", "decreased", "abnormal low", "below range"}:
+                return "low"
+            return "normal"
+
+        def _extract_status_hint(text: str) -> str:
+            compact = " ".join((text or "").split()).lower()
+            if not compact:
+                return ""
+
+            if "high" in compact or "elevated" in compact or "above" in compact:
+                return "high"
+            if "low" in compact or "decreased" in compact or "below" in compact:
+                return "low"
+            if "normal" in compact or "non reactive" in compact:
+                return "normal"
+            if re.search(r"(^|[\s(])h([\s):]|$)", compact) or re.search(r"[a-z]h\s+[<>]?\s*\d", compact):
+                return "high"
+            if re.search(r"(^|[\s(])l([\s):]|$)", compact) or re.search(r"[a-z]l\s+[<>]?\s*\d", compact):
+                return "low"
+            return ""
+
+        def _parse_value_and_unit(value_text: str) -> tuple[float | None, str]:
+            compact = " ".join((value_text or "").split())
+            if not compact:
+                return None, ""
+
+            match = re.search(r"[<>]?\s*[-+]?\d[\d,]*(?:\.\d+)?", compact)
+            if not match:
+                return None, ""
+
+            numeric_token = re.sub(r"[^0-9+\-.]", "", match.group(0)).replace(",", "")
+            if not numeric_token:
+                return None, ""
+
+            try:
+                value = float(numeric_token)
+            except ValueError:
+                return None, ""
+
+            unit = compact[match.end():].strip().lstrip(":=-")
+            return value, unit
+
+        def _parse_reference_bounds(reference_text: str) -> tuple[float | None, float | None]:
+            compact = " ".join((reference_text or "").split()).replace(",", "")
+            if not compact:
+                return None, None
+
+            range_match = re.search(r"(-?\d+(?:\.\d+)?)\s*(?:-|to)\s*(-?\d+(?:\.\d+)?)", compact, re.IGNORECASE)
+            if range_match:
+                try:
+                    return float(range_match.group(1)), float(range_match.group(2))
+                except ValueError:
+                    return None, None
+
+            lt_match = re.search(r"<=?\s*(-?\d+(?:\.\d+)?)", compact)
+            if lt_match:
+                try:
+                    return None, float(lt_match.group(1))
+                except ValueError:
+                    return None, None
+
+            gt_match = re.search(r">=?\s*(-?\d+(?:\.\d+)?)", compact)
+            if gt_match:
+                try:
+                    return float(gt_match.group(1)), None
+                except ValueError:
+                    return None, None
+
+            return None, None
+
+        def _infer_status_from_reference(value: float, reference_text: str, fallback_status: str) -> str:
+            if fallback_status in {"high", "low"}:
+                return fallback_status
+
+            low_bound, high_bound = _parse_reference_bounds(reference_text)
+            if low_bound is not None and value < low_bound:
+                return "low"
+            if high_bound is not None and value > high_bound:
+                return "high"
+            return fallback_status
+
+        def _clean_lab_test_name(test_name: str) -> str:
+            compact = " ".join((test_name or "").split()).strip().strip("|:-")
+            compact = re.sub(r"^[\-_.]+", "", compact)
+            return compact
+
+        def _is_likely_lab_test_name(test_name: str) -> bool:
+            if not test_name:
+                return False
+
+            lowered = test_name.lower().strip()
+            if not lowered:
+                return False
+
+            skip_exact = {
+                "test",
+                "result",
+                "reference range",
+                "interpretation",
+                "laboratory report",
+                "complete blood count (cbc)",
+                "complete blood count",
+                "metabolic panel",
+                "chemistry and inflammatory markers",
+                "chemistry and sepsis markers",
+                "inflammatory markers",
+                "blood chemistry panel",
+                "notes",
+                "category",
+            }
+            if lowered in skip_exact:
+                return False
+
+            metadata_hints = (
+                "patient",
+                "requesting doctor",
+                "number",
+                "age",
+                "gender",
+                "collection date",
+                "received date",
+                "report date",
+                "location",
+                "sample type",
+                "status",
+                "page",
+                "passport",
+                "clinic",
+                "ref.",
+                "lab id",
+                "registration",
+                "approved on",
+                "printed on",
+                "scan qr code",
+                "laboratory test report",
+            )
+            if any(hint in lowered for hint in metadata_hints):
+                return False
+
+            short_allowed = {
+                "ph",
+                "t3",
+                "t4",
+                "tsh",
+                "ldh",
+                "ast",
+                "alt",
+                "bun",
+                "esr",
+                "crp",
+                "hba1c",
+                "hba1",
+            }
+            if len(lowered) <= 2 and lowered not in short_allowed:
+                return False
+
+            if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", lowered):
+                return False
+
+            return True
+
+        def _looks_like_unit(unit_text: str) -> bool:
+            compact = " ".join((unit_text or "").split()).strip()
+            if not compact:
+                return False
+            if len(compact) > 24:
+                return False
+            if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", compact):
+                return False
+            return bool(re.search(r"[A-Za-z%/\u00b5]", compact))
+
+        def _looks_like_reference(reference_text: str) -> bool:
+            compact = " ".join((reference_text or "").split())
+            if not compact:
+                return False
+            lower = compact.lower()
+            if "normal" in lower and "range" in lower:
+                return True
+            if re.search(r"\d", compact) and re.search(r"-|<|>|≤|≥|to", compact):
+                return True
+            if "xxx" in lower and "-" in compact:
+                return True
+            return False
+
+        def _lab_signal_score(test_name: str, unit: str, reference: str, status_hint_present: bool) -> int:
+            score = 0
+            lowered = test_name.lower()
+            if _looks_like_unit(unit):
+                score += 1
+            if _looks_like_reference(reference):
+                score += 1
+            if status_hint_present:
+                score += 1
+
+            analyte_hints = (
+                "wbc",
+                "white blood",
+                "rbc",
+                "red blood",
+                "hemoglobin",
+                "hematocrit",
+                "platelet",
+                "creatinine",
+                "bun",
+                "lactate",
+                "crp",
+                "esr",
+                "procalcitonin",
+                "glucose",
+                "cholesterol",
+                "triglyceride",
+                "hba1c",
+                "sodium",
+                "potassium",
+                "chloride",
+                "ast",
+                "alt",
+                "ldh",
+                "albumin",
+                "bilirubin",
+            )
+            if any(hint in lowered for hint in analyte_hints):
+                score += 1
+            return score
+
+        def _select_best_deterministic_parse(candidates: list[dict | None]) -> dict | None:
+            valid = [candidate for candidate in candidates if candidate]
+            if not valid:
+                return None
+
+            valid.sort(
+                key=lambda candidate: (
+                    candidate.get("score_total", 0),
+                    len(candidate.get("abnormal_values", [])),
+                    len(candidate.get("lab_values", {})),
+                ),
+                reverse=True,
+            )
+            return valid[0]
+
+        def _parse_labs_from_table_text(raw_text: str, mode: str, min_labs: int = 3) -> dict | None:
+            if not raw_text or "|" not in raw_text:
+                return None
+
+            lab_values = {}
+            abnormal_values = []
+            score_by_test = {}
+            explicit_status_by_test = {}
+
+            for line in str(raw_text).splitlines():
+                compact = " ".join(line.split())
+                if not compact or "|" not in compact:
+                    continue
+
+                columns = [c.strip() for c in compact.split("|") if c.strip()]
+                if len(columns) < 3:
+                    continue
+
+                test_name = _clean_lab_test_name(columns[0])
+                if not _is_likely_lab_test_name(test_name):
+                    continue
+                if test_name.lower().startswith("clinical note"):
+                    continue
+
+                result_text = columns[1]
+                value, unit = _parse_value_and_unit(result_text)
+                if value is None and len(columns) >= 3:
+                    value, unit = _parse_value_and_unit(f"{columns[1]} {columns[2]}")
+                if value is None:
+                    continue
+
+                if len(columns) >= 4:
+                    reference = columns[2]
+                    status_source = " ".join(columns[3:])
+                else:
+                    reference = columns[2]
+                    status_source = ""
+
+                status_hint = _extract_status_hint(f"{status_source} {result_text}")
+                status = _normalize_lab_status(status_hint)
+                if not status_hint:
+                    status = _infer_status_from_reference(value, reference, status)
+
+                signal_score = _lab_signal_score(
+                    test_name=test_name,
+                    unit=unit,
+                    reference=reference,
+                    status_hint_present=bool(status_hint),
+                )
+                if signal_score < 2:
+                    continue
+
+                dedupe_key = test_name.lower()
+                previous_score = score_by_test.get(dedupe_key, -1)
+                if signal_score < previous_score:
+                    continue
+
+                lab_values[test_name] = {
+                    "value": value,
+                    "unit": unit,
+                    "reference": reference,
+                    "status": status,
+                }
+                score_by_test[dedupe_key] = signal_score
+                explicit_status_by_test[test_name] = bool(status_hint)
+
+            if len(lab_values) < min_labs:
+                return None
+
+            score_total = 0
+            for test_name, payload in lab_values.items():
+                if payload["status"] in {"high", "low"}:
+                    abnormal_values.append(test_name)
+                score_total += _lab_signal_score(
+                    test_name=test_name,
+                    unit=str(payload.get("unit", "")),
+                    reference=str(payload.get("reference", "")),
+                    status_hint_present=explicit_status_by_test.get(test_name, False),
+                )
+
+            return {
+                "lab_values": lab_values,
+                "abnormal_values": abnormal_values,
+                "score_total": score_total,
+                "mode": mode,
+            }
+
+        def _parse_labs_from_flat_text(raw_text: str, mode: str, min_labs: int = 3) -> dict | None:
+            if not raw_text:
+                return None
+
+            method_tokens = {
+                "colorimetric",
+                "calculated",
+                "derived",
+                "microscopic",
+                "electrical",
+                "impedance",
+                "method",
+                "direct",
+                "analysis",
+                "analysish",
+                "cube",
+                "cell",
+                "sf",
+                "chemiluminescence",
+                "immunoassay",
+                "clia",
+                "hplc",
+                "ifcc",
+            }
+
+            flat_pattern = re.compile(
+                r"([<>]?\s*[-+]?\d[\d,]*(?:\.\d+)?)\s+(\S{1,18})\s+((?:[<>]=?\s*)?-?\d[\d,]*(?:\.\d+)?(?:\s*(?:-|to)\s*-?\d[\d,]*(?:\.\d+)?)?)\s*$",
+                re.IGNORECASE,
+            )
+
+            lab_values = {}
+            abnormal_values = []
+            score_by_test = {}
+
+            for line in str(raw_text).splitlines():
+                compact = " ".join(line.split())
+                if not compact or "|" in compact:
+                    continue
+                if len(compact) < 12 or len(compact) > 160:
+                    continue
+                if not re.search(r"\d", compact):
+                    continue
+
+                match = flat_pattern.search(compact)
+                if not match:
+                    continue
+
+                value_text = match.group(1)
+                unit = match.group(2)
+                reference = match.group(3)
+                prefix = compact[:match.start()].strip(" :-")
+                if not prefix:
+                    continue
+
+                prefix_tokens = prefix.split()
+                while prefix_tokens:
+                    token = prefix_tokens[-1].strip(",.()").lower()
+                    if token in method_tokens or token in {"h", "l"}:
+                        prefix_tokens.pop()
+                        continue
+                    break
+
+                test_name = _clean_lab_test_name(" ".join(prefix_tokens))
+                if not _is_likely_lab_test_name(test_name):
+                    continue
+
+                value, _ = _parse_value_and_unit(value_text)
+                if value is None:
+                    continue
+
+                status_hint = _extract_status_hint(prefix)
+                status = _normalize_lab_status(status_hint)
+                if not status_hint:
+                    status = _infer_status_from_reference(value, reference, status)
+
+                signal_score = _lab_signal_score(
+                    test_name=test_name,
+                    unit=unit,
+                    reference=reference,
+                    status_hint_present=bool(status_hint),
+                )
+                if signal_score < 3:
+                    continue
+
+                dedupe_key = test_name.lower()
+                previous_score = score_by_test.get(dedupe_key, -1)
+                if signal_score < previous_score:
+                    continue
+
+                lab_values[test_name] = {
+                    "value": value,
+                    "unit": unit,
+                    "reference": reference,
+                    "status": status,
+                }
+                score_by_test[dedupe_key] = signal_score
+
+            if len(lab_values) < min_labs:
+                return None
+
+            score_total = 0
+            for test_name, payload in lab_values.items():
+                if payload["status"] in {"high", "low"}:
+                    abnormal_values.append(test_name)
+                score_total += _lab_signal_score(
+                    test_name=test_name,
+                    unit=str(payload.get("unit", "")),
+                    reference=str(payload.get("reference", "")),
+                    status_hint_present=payload["status"] in {"high", "low"},
+                )
+
+            return {
+                "lab_values": lab_values,
+                "abnormal_values": abnormal_values,
+                "score_total": score_total,
+                "mode": mode,
+            }
+
+        def _clamp_rag_query(query: str, max_chars: int = 480) -> str:
+            if max_chars <= 0:
+                return ""
+
+            compact = " ".join(str(query).split())
+            if len(compact) <= max_chars:
+                return compact
+
+            cutoff = compact.rfind(" ", 0, max_chars + 1)
+            if cutoff < int(max_chars * 0.6):
+                cutoff = max_chars
+            return compact[:cutoff].rstrip()
+
         def _rag_cache_key(user_challenge: str, current_differential: list) -> str:
             dx_names = []
             for diagnosis in current_differential[:4]:
@@ -781,12 +1326,25 @@ class SturgeonService:
                 logger.info("RAG cache hit", cache_hits=self.rag_cache_hits, cache_misses=self.rag_cache_misses)
                 return cached_context
 
-            dx_names = [d.name for d in current_differential[:3]]
-            rag_query = (
-                f"{user_challenge} | Clinical context: {', '.join(dx_names)}"
-                if dx_names
-                else user_challenge
-            )
+            dx_names = []
+            for diagnosis in current_differential[:3]:
+                if hasattr(diagnosis, "name"):
+                    dx_names.append(str(diagnosis.name))
+                elif isinstance(diagnosis, dict):
+                    dx_names.append(str(diagnosis.get("name", "")))
+
+            challenge_text = " ".join(user_challenge.split())
+            context_suffix = f" | Clinical context: {', '.join(dx_names)}" if dx_names else ""
+            challenge_budget = rag_query_max_chars - len(context_suffix)
+
+            if challenge_budget < 48:
+                context_suffix = ""
+                challenge_budget = rag_query_max_chars
+
+            rag_query = _clamp_rag_query(challenge_text, max_chars=challenge_budget)
+            if context_suffix:
+                rag_query = f"{rag_query}{context_suffix}"
+            rag_query = _clamp_rag_query(rag_query, max_chars=rag_query_max_chars)
 
             try:
                 chunks, rag_error = await asyncio.to_thread(
@@ -795,7 +1353,17 @@ class SturgeonService:
                     ip_address="internal",
                     top_k=8,
                 )
-                if rag_error or not chunks:
+                if rag_error:
+                    if "maximum length" in rag_error.lower():
+                        self.rag_query_blocked_count += 1
+                        logger.warning(
+                            "RAG query blocked by length guard",
+                            rag_query_chars=len(rag_query),
+                            blocked_count=self.rag_query_blocked_count,
+                        )
+                    return ""
+
+                if not chunks:
                     return ""
 
                 relevant_chunks = [c for c in chunks if c.distance <= rag_distance_threshold]
@@ -820,6 +1388,8 @@ class SturgeonService:
                 logger.warning("RAG retrieval timed out", timeout_seconds=timeout_seconds)
                 return ""
             except Exception as e:
+                if "maximum length" in str(e).lower():
+                    self.rag_query_blocked_count += 1
                 logger.warning("RAG retrieval failed", error=str(e))
                 return ""
 
@@ -858,7 +1428,13 @@ class SturgeonService:
                 )
 
                 diagnoses = _parse_differential(result.get("updated_differential", []))
-                citations = _normalize_citations(result.get("citations", []))
+                raw_citations = result.get("citations", [])
+                citations = _normalize_citations(raw_citations)
+                if raw_citations and not citations:
+                    logger.warning(
+                        "All orchestrator citations dropped after URL normalization",
+                        raw_citations_count=len(raw_citations),
+                    )
                 return {
                     "ai_response": result.get("ai_response", "I need more information to respond."),
                     "updated_differential": diagnoses if diagnoses else [d.model_dump() for d in request_model.current_differential],
@@ -954,6 +1530,11 @@ class SturgeonService:
                 ai_response_text = data.get("ai_response", "")
                 _, citations_raw = extract_citations(ai_response_text)
                 citations = _normalize_citations(citations_raw)
+                if citations_raw and not citations:
+                    logger.warning(
+                        "All fallback citations dropped after URL normalization",
+                        raw_citations_count=len(citations_raw),
+                    )
 
                 return {
                     "ai_response": ai_response_text,
@@ -1014,6 +1595,13 @@ class SturgeonService:
                     "entries": len(self.rag_query_cache),
                     "hits": self.rag_cache_hits,
                     "misses": self.rag_cache_misses,
+                },
+                "counters": {
+                    "differential_concise_retry_count": self.differential_concise_retry_count,
+                    "summary_concise_retry_count": self.summary_concise_retry_count,
+                    "rag_query_blocked_count": self.rag_query_blocked_count,
+                    "extract_labs_fast_path_count": self.extract_labs_fast_path_count,
+                    "extract_labs_llm_fallback_count": self.extract_labs_llm_fallback_count,
                 },
                 "concurrency": {
                     "max_containers": MODAL_MAX_CONTAINERS,
@@ -1178,12 +1766,15 @@ class SturgeonService:
                 )
 
             raw_text = ""
+            raw_text_full = ""
             try:
                 contents = await file.read()
+                parse_start = time.time()
                 if safe_filename.lower().endswith(".pdf"):
                     pdf_bytes = io.BytesIO(contents)
                     with pdfplumber.open(pdf_bytes) as pdf:
                         pages_text = []
+                        pages_text_full = []
                         for page in pdf.pages:
                             tables = page.extract_tables()
                             if tables:
@@ -1192,16 +1783,27 @@ class SturgeonService:
                                         cells = [str(cell).strip() for cell in row if cell]
                                         if cells:
                                             pages_text.append("  |  ".join(cells))
+                                            pages_text_full.append("  |  ".join(cells))
                                 pages_text.append("")
+                                pages_text_full.append("")
 
                             page_text = page.extract_text()
                             if page_text:
-                                pages_text.append(page_text)
+                                pages_text_full.append(page_text)
+                                if not tables:
+                                    pages_text.append(page_text)
                         raw_text = "\n".join(pages_text).strip()
+                        raw_text_full = "\n".join(pages_text_full).strip()
                 else:
                     raw_text = contents.decode("utf-8", errors="replace").strip()
+                    raw_text_full = raw_text
 
                 raw_text = sanitize_lab_text(raw_text)
+                raw_text_full = sanitize_lab_text(raw_text_full)
+
+                if not raw_text and raw_text_full:
+                    raw_text = raw_text_full
+
                 if not raw_text:
                     return JSONResponse(
                         {"error": "Could not extract any text from the uploaded file"},
@@ -1209,17 +1811,68 @@ class SturgeonService:
                         headers=rate_limit_headers,
                     )
 
-                prompt = EXTRACT_LABS_PROMPT.format(lab_report_text=raw_text)
+                compact_text = _compact_lab_report_text(raw_text)
+                if not compact_text:
+                    compact_text = raw_text[:2200]
+
+                full_compact_text = _compact_lab_report_text(raw_text_full or raw_text, max_chars=9000, max_lines=320)
+                if not full_compact_text:
+                    full_compact_text = (raw_text_full or raw_text)[:9000]
+
+                parse_duration_ms = round((time.time() - parse_start) * 1000, 2)
+                logger.info(
+                    "extract-labs-file text prepared",
+                    parse_duration_ms=parse_duration_ms,
+                    raw_chars=len(raw_text),
+                    raw_full_chars=len(raw_text_full or raw_text),
+                    compact_chars=len(compact_text),
+                    full_compact_chars=len(full_compact_text),
+                    filename=safe_filename,
+                )
+
+                deterministic_parsed = _select_best_deterministic_parse(
+                    [
+                        _parse_labs_from_table_text(compact_text, mode="table-fast"),
+                        _parse_labs_from_table_text(raw_text_full or raw_text, mode="table-full"),
+                        _parse_labs_from_flat_text(raw_text_full or raw_text, mode="flat-full"),
+                    ]
+                )
+                if deterministic_parsed:
+                    self.extract_labs_fast_path_count += 1
+                    logger.info(
+                        "extract-labs-file parsed via deterministic path",
+                        parse_mode=deterministic_parsed.get("mode"),
+                        parsed_count=len(deterministic_parsed["lab_values"]),
+                        score_total=deterministic_parsed.get("score_total", 0),
+                    )
+                    response_data = ExtractLabsFileResponse(
+                        lab_values=deterministic_parsed["lab_values"],
+                        abnormal_values=deterministic_parsed["abnormal_values"],
+                        raw_text=(raw_text_full or raw_text)[:5000],
+                    )
+                    logger.info(
+                        "extract-labs-file completed",
+                        duration_ms=round((time.time() - start_time) * 1000, 2),
+                    )
+                    return JSONResponse(response_data.model_dump(), headers=rate_limit_headers)
+
+                self.extract_labs_llm_fallback_count += 1
+                prompt = EXTRACT_LABS_PROMPT.format(lab_report_text=full_compact_text)
+                prompt += (
+                    "\n\nIMPORTANT: Keep output compact. Include only labs explicitly present in the report. "
+                    "Return JSON only."
+                )
                 messages = [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ]
 
+                llm_start = time.time()
                 content, _, _ = await _call_vllm_chat(
                     endpoint_name="extract-labs-file",
                     messages=messages,
-                    max_tokens=2048,
-                    temperature=0.3,
+                    max_tokens=1024,
+                    temperature=0.2,
                 )
 
                 try:
@@ -1229,15 +1882,21 @@ class SturgeonService:
                     retry_content, _, _ = await _call_vllm_chat(
                         endpoint_name="extract-labs-file-retry",
                         messages=messages,
-                        max_tokens=2048,
-                        temperature=0.3,
+                        max_tokens=768,
+                        temperature=0.2,
                     )
                     data = extract_json(retry_content)
+
+                llm_duration_ms = round((time.time() - llm_start) * 1000, 2)
+                logger.info(
+                    "extract-labs-file model completed",
+                    llm_duration_ms=llm_duration_ms,
+                )
 
                 response_data = ExtractLabsFileResponse(
                     lab_values=data.get("lab_values", {}),
                     abnormal_values=data.get("abnormal_values", []),
-                    raw_text=raw_text[:5000],
+                    raw_text=(raw_text_full or raw_text)[:5000],
                 )
 
                 logger.info("extract-labs-file completed", duration_ms=round((time.time() - start_time) * 1000, 2))
@@ -1295,12 +1954,13 @@ class SturgeonService:
                 content, _, finish_reason = await _call_vllm_chat(
                     endpoint_name="differential",
                     messages=messages,
-                    max_tokens=1024,
+                    max_tokens=1152,
                     temperature=0.25,
                 )
 
                 if finish_reason == "length" or _is_likely_truncated_json_response(content):
                     logger.warning("Differential output likely truncated; retrying with concise JSON constraints")
+                    self.differential_concise_retry_count += 1
                     concise_prompt = (
                         prompt
                         + "\n\nIMPORTANT: Keep output concise to fit token budget. "
@@ -1315,7 +1975,7 @@ class SturgeonService:
                     content, _, _ = await _call_vllm_chat(
                         endpoint_name="differential-concise-retry",
                         messages=concise_messages,
-                        max_tokens=768,
+                        max_tokens=896,
                         temperature=0.2,
                     )
 
@@ -1613,12 +2273,13 @@ Keep each bullet under 18 words and avoid long prose."""
                 content, _, finish_reason = await _call_vllm_chat(
                     endpoint_name="summary",
                     messages=messages,
-                    max_tokens=1536,
+                    max_tokens=1664,
                     temperature=0.3,
                 )
 
                 if finish_reason == "length" or _is_likely_truncated_json_response(content):
                     logger.warning("Summary output likely truncated; retrying with concise JSON constraints")
+                    self.summary_concise_retry_count += 1
                     concise_prompt = (
                         prompt
                         + "\n\nIMPORTANT: Keep output compact. reasoning_chain max 5 items, "
@@ -1632,7 +2293,7 @@ Keep each bullet under 18 words and avoid long prose."""
                     content, _, _ = await _call_vllm_chat(
                         endpoint_name="summary-concise-retry",
                         messages=concise_messages,
-                        max_tokens=1152,
+                        max_tokens=1280,
                         temperature=0.2,
                     )
 

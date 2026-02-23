@@ -17,6 +17,7 @@ export interface DemoCase {
   description: string;
   patientHistory: string;
   labValues: Record<string, { value: string; unit: string; status: "normal" | "high" | "low" }>;
+  labFile?: string;
   imageFile?: string;
   suggestedChallenges: string[];
 }
@@ -65,6 +66,7 @@ Physical Examination:
       "Platelets": { value: "245", unit: "x10^9/L", status: "normal" },
       "LDH": { value: "185", unit: "U/L", status: "normal" },
     },
+    labFile: "test-data/melanoma-labs.pdf",
     imageFile: "test-data/derm-melanoma.jpg",
     suggestedChallenges: [
       "What if this is just a benign nevus? The patient has no family history.",
@@ -127,6 +129,7 @@ Physical Examination:
       "CRP": { value: "85", unit: "mg/L", status: "high" },
       "Procalcitonin": { value: "4.2", unit: "ng/mL", status: "high" },
     },
+    labFile: "test-data/pneumonia-labs.pdf",
     imageFile: "test-data/person100_bacteria_475.jpeg",
     suggestedChallenges: [
       "Could this be heart failure instead? He has diabetes and hypertension.",
@@ -188,6 +191,7 @@ Physical Examination:
       "Procalcitonin": { value: "8.5", unit: "ng/mL", status: "high" },
       "Glucose": { value: "285", unit: "mg/dL", status: "high" },
     },
+    labFile: "test-data/sepsis-labs.pdf",
     imageFile: undefined,
     suggestedChallenges: [
       "What if this is just dehydration from poor oral intake?",
@@ -215,7 +219,7 @@ export function formatLabValuesForDisplay(labValues: DemoCase["labValues"]): str
 }
 
 /**
- * Load demo case files (returns File objects for images)
+ * Load demo case files
  */
 export async function loadDemoImage(filePath: string | undefined): Promise<File | null> {
   if (!filePath) return null;
@@ -229,6 +233,23 @@ export async function loadDemoImage(filePath: string | undefined): Promise<File 
     return new File([blob], filename, { type: blob.type });
   } catch (error) {
     console.error("Failed to load demo image:", error);
+    return null;
+  }
+}
+
+export async function loadDemoLabFile(filePath: string | undefined): Promise<File | null> {
+  if (!filePath) return null;
+
+  try {
+    const response = await fetch(filePath);
+    if (!response.ok) return null;
+
+    const blob = await response.blob();
+    const filename = filePath.split("/").pop() || "labs.pdf";
+    const mimeType = blob.type || "application/pdf";
+    return new File([blob], filename, { type: mimeType });
+  } catch (error) {
+    console.error("Failed to load demo lab file:", error);
     return null;
   }
 }

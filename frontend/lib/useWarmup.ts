@@ -3,10 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 const INITIAL_POLL_DELAY = 0; // Immediate first ping to trigger cold start
-const POLL_INTERVALS = [20000, 30000, 45000]; // Backoff: 20s → 30s → 45s (cap)
+const POLL_INTERVALS = [120000, 30000]; // First follow-up near 2 minutes, then one fallback
 const MAX_BACKOFF_INDEX = POLL_INTERVALS.length - 1;
 const REQUEST_TIMEOUT = 15000; // 15s timeout per request
-const DEFAULT_MAX_ATTEMPTS = 5;
+const DEFAULT_MAX_ATTEMPTS = 3;
 
 export type WarmupStatus = "idle" | "warming" | "ready" | "error";
 

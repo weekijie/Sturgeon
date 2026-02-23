@@ -134,18 +134,38 @@ def extract_citations(text: str) -> Tuple[str, List[Dict]]:
                 break
         
         if source == "Unknown":
-            if "ATS/IDSA" in citation_upper or ("ATS" in citation_upper and "IDSA" in citation_upper):
-                source = "ATS/IDSA"
-                url = GUIDELINE_URLS.get("ATS/IDSA", GUIDELINE_URLS.get("ATS", ""))
-            elif "CDC" in citation_upper:
-                source = "CDC"
-                url = GUIDELINE_URLS.get("CDC", "")
-            elif "WHO" in citation_upper:
-                source = "WHO"
-                url = GUIDELINE_URLS.get("WHO", "")
-            elif "USPSTF" in citation_upper:
-                source = "USPSTF"
-                url = GUIDELINE_URLS.get("USPSTF", "")
+            fallback_sources = [
+                ("ATS/IDSA", "ATS/IDSA"),
+                ("SURVIVING SEPSIS CAMPAIGN", "SSC"),
+                ("PRIMARY CARE CLINICS", "PMC"),
+                ("PUBMED CENTRAL", "PMC"),
+                ("PUBMED", "PMC"),
+                ("PMC", "PMC"),
+                ("CDC", "CDC"),
+                ("WHO", "WHO"),
+                ("USPSTF", "USPSTF"),
+                ("IDSA", "IDSA"),
+                ("ATS", "ATS"),
+                ("BTS", "BTS"),
+                ("SCCM", "SCCM"),
+                ("ESICM", "ESICM"),
+                ("SSC", "SSC"),
+                ("NCCN", "NCCN"),
+                ("ASCO", "ASCO"),
+                ("ESMO", "ESMO"),
+                ("AAD", "AAD"),
+                ("ACR", "ACR"),
+                ("ADA", "ADA"),
+                ("AHA", "AHA"),
+                ("ACC", "ACC"),
+                ("CHEST", "CHEST"),
+                ("NICE", "NICE"),
+            ]
+            for marker, canonical in fallback_sources:
+                if re.search(rf"\b{re.escape(marker)}\b", citation_upper):
+                    source = canonical
+                    url = GUIDELINE_URLS.get(canonical, "")
+                    break
         
         citations.append({
             "text": citation_text,

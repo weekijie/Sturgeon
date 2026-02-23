@@ -54,12 +54,12 @@ export function WarmupToast({ status, error, autoStart = true }: WarmupToastProp
             <Spinner size="sm" color="current" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">AI warming up...</p>
-              <p className="text-xs opacity-90">
-                {autoStart
-                  ? "First load takes 2-3 minutes. Checking status with progressive backoff..."
-                  : "Warmup started on demand. Checking status with progressive backoff..."}
-              </p>
-            </div>
+                <p className="text-xs opacity-90">
+                  {autoStart
+                  ? "First load takes 2-3 minutes. Checking now, then near 2 minutes."
+                  : "Warmup started on demand. Checking now, then near 2 minutes."}
+                </p>
+              </div>
             <CloseButton
               className="text-current opacity-70 hover:opacity-100"
               onPress={handleDismiss}

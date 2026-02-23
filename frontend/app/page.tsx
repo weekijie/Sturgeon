@@ -8,7 +8,7 @@ import Prose from "../components/Prose";
 import { RateLimitStatus, parseRateLimitHeaders, isRateLimitError } from "../components/RateLimitUI";
 import { WarmupToast } from "../components/WarmupToast";
 import { useWarmup } from "../lib/useWarmup";
-import { demoCases, loadDemoImage, DemoCase } from "../lib/demo-cases";
+import { demoCases, loadDemoImage, loadDemoLabFile, DemoCase } from "../lib/demo-cases";
 
 // Helper: is the file an image?
 function isImageFile(file: File): boolean {
@@ -168,13 +168,29 @@ export default function UploadPage() {
     setPatientHistoryLocal(demoCase.patientHistory);
     setError(null);
 
-    const abnormalValues = Object.entries(demoCase.labValues)
-      .filter(([, value]) => value.status === "high" || value.status === "low")
-      .map(([name]) => name);
-    setLabResult({
-      lab_values: demoCase.labValues,
-      abnormal_values: abnormalValues,
-    });
+    let labFileLoaded = false;
+    if (demoCase.labFile) {
+      try {
+        const lab = await loadDemoLabFile(demoCase.labFile);
+        if (lab) {
+          setLabFile(lab);
+          setLabResult(null);
+          labFileLoaded = true;
+        }
+      } catch (error) {
+        console.error("Failed to load demo lab file:", error);
+      }
+    }
+
+    if (!labFileLoaded) {
+      const abnormalValues = Object.entries(demoCase.labValues)
+        .filter(([, value]) => value.status === "high" || value.status === "low")
+        .map(([name]) => name);
+      setLabResult({
+        lab_values: demoCase.labValues,
+        abnormal_values: abnormalValues,
+      });
+    }
     
     // Load image if available
     if (demoCase.imageFile) {
@@ -190,8 +206,7 @@ export default function UploadPage() {
       }
     }
     
-    // Note: Lab values are embedded in patient history for demo cases
-    // In production, we could create synthetic lab PDFs
+    // Demo cases prefer PDF lab files; fallback uses embedded lab values.
   };
 
   const handleAnalyze = async () => {
@@ -275,7 +290,7 @@ export default function UploadPage() {
           })()
         : Promise.resolve(null);
 
-      // Wait for both to complete
+      // Wait for both requests. Keep partial successes if one fails.
       setAnalysisStep(
         imageFile && labFile
           ? "Analyzing image + extracting lab values..."
@@ -284,10 +299,39 @@ export default function UploadPage() {
             : "Extracting lab values with MedGemma...",
       );
 
-      const [imgAnalysis, labExtraction] = await Promise.all([
+      const [imageOutcome, labOutcome] = await Promise.allSettled([
         imagePromise,
         labPromise,
       ]);
+
+      let imgAnalysis: ImageAnalysis | null = null;
+      let labExtraction: LabResults | null = null;
+      const partialWarnings: string[] = [];
+
+      if (imageOutcome.status === "fulfilled") {
+        imgAnalysis = imageOutcome.value;
+      } else if (imageFile) {
+        const imageError =
+          imageOutcome.reason instanceof Error
+            ? imageOutcome.reason.message
+            : "Image analysis failed";
+        partialWarnings.push(`Image analysis failed: ${imageError}`);
+      }
+
+      if (labOutcome.status === "fulfilled") {
+        labExtraction = labOutcome.value;
+      } else if (labFile) {
+        const labError =
+          labOutcome.reason instanceof Error
+            ? labOutcome.reason.message
+            : "Lab extraction failed";
+        partialWarnings.push(`Lab extraction failed: ${labError}`);
+      }
+
+      if (partialWarnings.length > 0) {
+        console.warn("Partial analysis warnings:", partialWarnings.join(" | "));
+        setAnalysisStep(`${partialWarnings[0]} Continuing...`);
+      }
 
       // Process image results
       if (imgAnalysis) {
@@ -317,6 +361,10 @@ export default function UploadPage() {
       if (resolvedLabResult) {
         setLabResult(resolvedLabResult);
         setLabResults(resolvedLabResult);
+      }
+
+      if (!imgAnalysis && !resolvedLabResult && !patientHistory.trim()) {
+        throw new Error("No usable evidence was processed. Please retry once warmup completes.");
       }
 
       // Step 2: Generate differential diagnosis
