@@ -2,6 +2,449 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-02-23] Session 33 - Post-Deploy Smoke Recheck (Demo + Local PDFs)
+
+### Verification (Modal Production)
+
+- Re-ran `/extract-labs-file` smoke tests against deployed backend endpoint from `.env.local`:
+  - `frontend/public/test-data/melanoma-labs.pdf` -> `10` labs, `0` abnormal
+  - `frontend/public/test-data/pneumonia-labs.pdf` -> `8` labs, `6` abnormal
+  - `frontend/public/test-data/sepsis-labs.pdf` -> `8` labs, `8` abnormal
+  - `sterling-accuris-pathology-sample-report-unlocked.pdf` -> `16` labs, `7` abnormal
+  - `Lab Report Example.pdf` -> `14` labs, `0` abnormal
+- Confirmed new `/health` extraction counters are active post-deploy:
+  - `extract_labs_fast_path_count` delta: `+5`
+  - `extract_labs_llm_fallback_count` delta: `0`
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Initial `/health` probe returned redirect status (`303`) before the final post-run check.
+   - **Why**: Endpoint canonicalization/redirect behavior on the first request path normalization.
+   - **Resolution**: Continued smoke flow and used the post-run `/health` response (`200`) as source of truth for counters.
+   - **Lesson**: For deployment checklisting, rely on final resolved `/health` payload and counter deltas rather than first probe status alone.
+
+## [2026-02-23] Session 32 - Demo-First Lab Parser Hardening + Robust Local PDF Fallback
+
+### Backend (modal_backend)
+
+#### Changed
+- **`/extract-labs-file` now uses a deterministic multi-parser selection before LLM fallback** (`modal_backend/app.py`):
+  - Added stricter deterministic extraction pipeline that scores and selects the best candidate from:
+    - `table-fast` (compact table text, demo-speed path)
+    - `table-full` (full extracted table/text context)
+    - `flat-full` (space-delimited line parser for reports where table extraction is weak)
+  - Increased deterministic quality guards to reduce false positives from metadata rows (for example `Number`, `Age`, patient header blocks).
+  - Added explicit test-name, unit, reference-range, and status-hint confidence heuristics before accepting parsed rows.
+- **Improved PDF text strategy without sacrificing demo speed** (`modal_backend/app.py`):
+  - Endpoint now keeps both:
+    - lean text (`raw_text`) for fast deterministic parse
+    - full context text (`raw_text_full`) for robust fallback behavior
+  - LLM fallback now uses expanded compact text (`max_chars=9000`, `max_lines=320`) to recover more values from long real-world PDFs when deterministic paths are insufficient.
+- **Health observability counters extended** (`modal_backend/app.py`):
+  - Added:
+    - `extract_labs_fast_path_count`
+    - `extract_labs_llm_fallback_count`
+  - Exposed both under `/health -> counters`.
+
+### Verification
+- `.venv/Scripts/python -m py_compile modal_backend/app.py`
+- `.venv/Scripts/python -c "...extract parser functions from modal_backend/app.py and run against: frontend/public/test-data/*.pdf, sterling-accuris-pathology-sample-report-unlocked.pdf, Lab Report Example.pdf..."`
+  - Demo PDFs: deterministic `table-fast` path selected with expected lab counts and abnormal flags.
+  - Local PDFs: deterministic extraction now returns broad lab sets (`flat-full` for Sterling, `table-fast` for MedScan sample) instead of prior metadata false positives.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Deterministic parser still accepted metadata-like table rows in some PDFs.
+   - **Why**: Initial table parser trusted column count and numeric parsing too heavily, so rows like administrative headers could pass.
+   - **Resolution**: Added stricter lab-name filtering, signal scoring (unit/reference/status/analyte hints), and raised acceptance thresholds.
+   - **Lesson**: Fast-path deterministic extraction must include semantic row validation, not just structural validation.
+
+2. **Problem**: Compact prompt fallback missed valid labs in longer local reports.
+   - **Why**: Previous fallback used aggressively compacted text intended for speed-focused demo flows.
+   - **Resolution**: Added dual raw-text tracks (`raw_text` + `raw_text_full`) and expanded fallback compaction budget for LLM parsing.
+   - **Workaround**: Keep deterministic parser first for demo latency, then use fuller fallback context only when needed.
+
+3. **Problem**: Remote `/health` did not expose new extraction counters during smoke tests.
+   - **Why**: Smoke endpoint was running a previously deployed backend revision that did not yet include Session 32 fields.
+   - **Resolution**: Verified functionality against local source-level parser harness and noted deployment dependency for live counter validation.
+   - **Workaround**: Re-run smoke checklist after deploying updated `modal_backend/app.py` to confirm `extract_labs_fast_path_count` and `extract_labs_llm_fallback_count` deltas.
+
+## [2026-02-23] Session 31 - Deterministic Table Parser for Demo PDF Lab Extraction
+
+### Backend (modal_backend)
+
+#### Fixed
+- **`/extract-labs-file` malformed JSON fallback on simple table PDFs** (`modal_backend/app.py`):
+  - Added deterministic table parser for `|`-delimited lab report lines.
+  - New fast-path parses `test | result | reference | interpretation` directly into `lab_values` with normalized statuses (`high|low|normal`).
+  - Fast-path short-circuits LLM extraction when >=2 labs are parsed, avoiding markdown-formatted pseudo-JSON failures.
+  - Preserves existing MedGemma extraction path as fallback for non-tabular reports.
+
+### Verification
+- `.venv/Scripts/python -m py_compile modal_backend/app.py`
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Generated demo PDFs contained clean text rows, but extraction returned only partial labs (often one row).
+   - **Why**: MedGemma occasionally returned markdown bullet lists with inline JSON fragments instead of a single valid JSON object; repair logic recovered partial data.
+   - **Resolution**: Added deterministic parser for simple table-formatted reports before the LLM call.
+   - **Lesson**: For predictable structured inputs, deterministic extraction should run before generative parsing.
+
+2. **Problem**: Lab extraction latency remained high despite compact prompts.
+   - **Why**: Requests still paid full generation latency when deterministic parsing was sufficient.
+   - **Resolution**: Fast-path now bypasses LLM for table-shaped reports, reducing both latency and parse fragility.
+   - **Workaround**: Keep LLM fallback for unstructured or OCR-like reports.
+
+## [2026-02-23] Session 30 - Warmup Poll Simplification + Partial Success Analyze Flow
+
+### Frontend
+
+#### Fixed
+- **Analyze flow now preserves partial success** (`frontend/app/page.tsx`):
+  - Switched analyze step from `Promise.all(...)` to `Promise.allSettled(...)` for image + lab requests.
+  - If one request fails (for example `/extract-labs` timeout during cold start), successful results from the other request are still applied.
+  - Added guarded continuation logic so differential generation proceeds when at least one usable evidence source is available.
+- **Extract-labs route timeout alignment** (`frontend/app/api/extract-labs/route.ts`):
+  - Increased timeout from `120000ms` to `295000ms` to match long-running backend cold/queue windows.
+  - Added `runtime="nodejs"` and `maxDuration=300` for parity with other long AI routes.
+- **Warmup health polling behavior simplified** (`frontend/lib/useWarmup.ts`, `frontend/components/WarmupToast.tsx`):
+  - Poll sequence now: immediate ping, then ~2 minute check, then one fallback check.
+  - Reduced warmup attempts from 5 to 3 to limit repeated health-check noise and credit overhead.
+  - Updated toast copy to reflect new polling schedule.
+
+### Verification
+- `npm --prefix frontend run lint -- app/page.tsx app/api/extract-labs/route.ts lib/useWarmup.ts components/WarmupToast.tsx`
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: When `/extract-labs` timed out during cold start, image analysis success was effectively discarded in UX.
+   - **Why**: `Promise.all(...)` rejects on first failure, so downstream handling never applied completed sibling results.
+   - **Resolution**: Switched to `Promise.allSettled(...)` and processed fulfilled results independently.
+   - **Lesson**: Parallel multimodal pipelines should degrade gracefully under partial failure, not fail closed.
+
+2. **Problem**: Frequent `/health` checks created noisy 503 runs during predictable cold-start windows.
+   - **Why**: Prior backoff schedule (20s/30s/45s with 5 attempts) probed too aggressively before inference stack was realistically ready.
+   - **Resolution**: Moved to immediate + 2-minute + one fallback polling schedule.
+   - **Workaround**: Treat initial Analyze as the real warmup trigger; keep health checks sparse.
+
+## [2026-02-23] Session 29 - Demo PDF Labs + Extract-Labs-File Speed Pass
+
+### Frontend
+
+#### Added
+- **Demo lab report PDFs** (`frontend/public/test-data/`):
+  - `melanoma-labs.pdf`
+  - `pneumonia-labs.pdf`
+  - `sepsis-labs.pdf`
+- **PDF generation utility** (`generate_demo_lab_pdfs.py`):
+  - Deterministic text-PDF generator for regenerating demo lab files from source strings.
+
+#### Changed
+- **Demo case model and loaders** (`frontend/lib/demo-cases.ts`):
+  - Added optional `labFile` to `DemoCase`.
+  - Wired all three demo cases to PDF lab files in `frontend/public/test-data/`.
+  - Added `loadDemoLabFile()` helper to load demo PDFs as `File` objects.
+- **Upload page demo-case behavior** (`frontend/app/page.tsx`):
+  - `loadDemoCase()` now prefers loading demo PDF lab files into `labFile` state.
+  - Falls back to embedded `labValues` only when demo PDF load fails.
+  - Removed stale note claiming labs are embedded in patient history.
+
+### Backend (modal_backend)
+
+#### Changed
+- **`/extract-labs-file` speed-focused compaction pass** (`modal_backend/app.py`):
+  - Added `_compact_lab_report_text()` to dedupe/normalize lines and keep high-signal lab content.
+  - Reduced PDF text duplication by skipping `page.extract_text()` when table extraction is present on that page.
+  - Added extraction-stage observability logs:
+    - `extract-labs-file text prepared` (parse duration + raw/compact char counts)
+    - `extract-labs-file model completed` (LLM duration)
+  - Reduced output budget for file extraction:
+    - first pass `max_tokens`: `2048 -> 1024`
+    - retry `max_tokens`: `2048 -> 768`
+  - Added concise extraction instruction to keep JSON compact while preserving explicit lab values only.
+
+### Verification
+- `.venv/Scripts/python -m py_compile modal_backend/app.py generate_demo_lab_pdfs.py`
+- `npm --prefix frontend run lint -- app/page.tsx lib/demo-cases.ts` (passes; one existing `no-img-element` warning in upload page)
+- `.venv/Scripts/python -c "...pdfplumber..."` sanity check confirms all 3 generated PDFs are text-extractable.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Demo cases did not exercise real PDF extraction path.
+   - **Why**: Demo preload injected `labValues` directly into state instead of loading a lab `File`.
+   - **Resolution**: Added `labFile` support and switched demo load path to file-first behavior.
+   - **Lesson**: Demo fixtures should execute the same path judges will evaluate, not a shortcut path.
+
+2. **Problem**: PDF lab extraction latency was disproportionately high versus image analysis.
+   - **Why**: File extraction used large output budget and verbose/duplicated PDF text payload (tables + full page text).
+   - **Resolution**: Added text compaction/dedupe, reduced token caps, and added stage timing logs for parse vs model time.
+   - **Workaround**: For critical live demos, preload warm container and avoid concurrent heavy endpoints on first turn.
+
+## [2026-02-23] Session 28 - CAP Citation Mapping Fix (Modal Orchestrator)
+
+### Backend (modal_backend)
+
+#### Fixed
+- **Pneumonia guideline citation drop in debate turns** (`modal_backend/gemini_orchestrator_modal.py`, `modal_backend/app.py`):
+  - Expanded fallback citation source mapping so extracted citations can resolve URLs for `PMC/PubMed`, `IDSA`, `ATS`, `BTS`, `SCCM`, `ESICM`, `SSC`, `NCCN`, `ASCO`, `ESMO`, `AAD`, `ACR`, `ADA`, `AHA`, `ACC`, `CHEST`, and `NICE` when alias matching misses.
+  - Added explicit fallback handling for `PRIMARY CARE CLINICS` and `PUBMED CENTRAL` citation text variants to map to `PMC` URL.
+  - Added warning logs when raw citations are extracted but all are dropped by URL normalization:
+    - `All orchestrator citations dropped after URL normalization`
+    - `All fallback citations dropped after URL normalization`
+
+### Compliance
+- No new external tools, datasets, or paid dependencies added.
+- Changes remain within existing approved stack and licensing constraints in `CLAUDE.md`.
+
+### Verification
+- Syntax checks passed with virtualenv Python:
+  - `.venv/Scripts/python -m py_compile modal_backend/gemini_orchestrator_modal.py`
+  - `.venv/Scripts/python -m py_compile modal_backend/app.py`
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: RAG retrieval succeeded for CAP/sepsis turns, but guideline links intermittently disappeared in UI.
+   - **Why**: Citation extraction returned text like `PMC Guidelines ...`, but fallback source inference did not map `PMC`/`PubMed` to a valid URL in unknown-source cases.
+   - **Resolution**: Added broader fallback source mapping for major medical organizations and PubMed/PMC variants.
+   - **Lesson**: Retrieval quality and citation-link quality are separate stages; both need explicit observability and robust mapping.
+
+2. **Problem**: Citation failures were hard to distinguish from retrieval failures during fast log review.
+   - **Why**: Existing logs showed retrieval success but did not show citation-drop events after URL filtering.
+   - **Resolution**: Added targeted warnings when extracted citations are fully dropped by normalization.
+   - **Workaround**: Continue checking `rag_audit` alongside `has_guidelines` and new normalization warnings during demo-case validation.
+
+## [2026-02-23] Session 27 - NEXT_PATCH_PLAN Implementation (RAG Clamp + Retry Counters)
+
+### Backend (modal_backend)
+
+#### Changed
+- **RAG query-length clamp** (`modal_backend/app.py`):
+  - Added `_clamp_rag_query()` and enforced `rag_query_max_chars=480` before retriever calls in `_retrieve_rag_context(...)`.
+  - Preserved clinical-context suffix where possible while trimming long challenge text first.
+  - Kept `rag_retriever.py` length/security validation unchanged.
+- **Retry churn tuning** (`modal_backend/app.py`):
+  - `/differential` first pass `max_tokens`: `1024 -> 1152`
+  - `/differential` concise retry `max_tokens`: `768 -> 896`
+  - `/summary` first pass `max_tokens`: `1536 -> 1664`
+  - `/summary` concise retry `max_tokens`: `1152 -> 1280`
+- **Health counters for quick audit checks** (`modal_backend/app.py`):
+  - Added runtime counters:
+    - `differential_concise_retry_count`
+    - `summary_concise_retry_count`
+    - `rag_query_blocked_count`
+  - Exposed all three under `/health -> counters`.
+
+### Verification
+- Syntax check passed with virtualenv Python:
+  - `.venv/Scripts/python -m py_compile modal_backend/app.py`
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Naive truncation risked dropping the diagnosis context appended to RAG queries.
+   - **Why**: Original query composition appends `Clinical context` at the end, so simple end-trim can remove high-value differential hints.
+   - **Resolution**: Applied a two-step clamp that trims challenge text first, then re-clamps final query to `<=480` chars.
+   - **Lesson**: Clamp strategy should preserve semantically dense suffixes, not just character count.
+
+2. **Problem**: Retry/block telemetry required lightweight visibility without introducing heavy logging dependencies.
+   - **Why**: Post-deploy checklist validation currently relies on deep log scans.
+   - **Resolution**: Added in-memory counters and exposed them directly in `/health` for fast checks.
+   - **Workaround**: Counters are per-container runtime metrics (reset on cold start), so pair with log samples for long-window audits.
+
+## [2026-02-23] Session 26 — Post-Deploy Logchecklist Audit (CPU Snapshot Run)
+
+### Verification Scope
+- Audited production behavior using `logchecklist.md` against:
+  - `modallog.txt`
+  - `sturgeon-log-export-2026-02-22T16-25-15.json`
+  - Modal invocation timing table from production run
+
+### Results
+- **CPU snapshot mode stable**:
+  - `enable_memory_snapshot=true`, `enable_gpu_snapshot=false`
+  - No GPU snapshot NCCL broken-pipe failure pattern observed in this run.
+- **Queue/concurrency behavior improved**:
+  - vLLM telemetry repeatedly showed `Running: 2 reqs, Waiting: 0 reqs`.
+  - Warm-path health checks remained responsive (~100-300ms execution).
+- **Latency SLOs improved**:
+  - `/analyze-image`: ~16s-33s in sampled runs (well under target)
+  - `/differential`: ~43s-72s in sampled runs (under target)
+  - `/summary`: ~42s-53s in sampled runs (under target)
+  - `/debate-turn`: mostly ~36s-61s (p95 within target; p50 still near threshold)
+- **Functional correctness**:
+  - Differential outputs returned 3 diagnoses in sampled runs.
+  - Debate and summary flows completed with HTTP 200.
+
+### Issues Still Open
+- **Retry churn** remains elevated:
+  - Frequent `Differential output likely truncated; retrying with concise JSON constraints`
+  - Frequent `Summary output likely truncated; retrying with concise JSON constraints`
+- **RAG query length guard** can block retrieval on long prompts:
+  - `SECURITY [BLOCKED] ... Query exceeds maximum length of 500 characters`
+  - Some blocked turns correlate with `has_guidelines=false` in final debate response.
+
+### Documentation Added
+- Added `NEXT_PATCH_PLAN.md` with concrete follow-up patch plan for the next session.
+- Updated `README.md`, `CLAUDE.md`, `STURGEON_PROJECT_PLAN.md`, and `DEPLOYMENT.md` with this session's deployment stabilization status and next patch direction.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: GPU snapshot path was unstable for this workload during earlier production tests.
+   - **Why**: Alpha GPU snapshot behavior plus vLLM/NCCL subprocess lifecycle interactions produced instability.
+   - **Resolution**: Continued with CPU snapshots as default production mode for reliability.
+   - **Lesson**: Treat GPU snapshots as experimental until repeated production runs are clean.
+
+2. **Problem**: RAG retrieval was occasionally blocked despite healthy core inference.
+   - **Why**: Constructed retrieval query exceeded retriever max length (500 chars).
+   - **Resolution**: Prepared explicit follow-up patch to truncate retrieval query before `retrieve()` call.
+   - **Workaround**: Keep debate challenge prompts concise where possible until patch is applied.
+
+## [2026-02-22] Session 25 — Queue/Timeout Mitigation for Vercel 504s
+
+### Backend (modal_backend)
+
+#### Changed
+- **Modal input concurrency enabled** (`modal_backend/app.py`):
+  - Added class-level `@modal.concurrent(max_inputs=..., target_inputs=...)` for the ASGI service.
+  - Added env-tunable scaling/concurrency settings:
+    - `MODAL_MAX_CONTAINERS` (default `1`)
+    - `MODAL_MAX_INPUTS` (default `8`)
+    - `MODAL_TARGET_INPUTS` (default `4`)
+- **Queue observability endpoint** (`modal_backend/app.py`):
+  - Added `GET /vllm-metrics` to expose selected queue/latency counters from vLLM `/metrics`.
+  - Added concurrency config fields to `/health` for runtime visibility.
+- **Differential tail-latency tuning** (`modal_backend/app.py`):
+  - Tightened default output budget and compactness constraints.
+  - Reduced retry token budgets to avoid multi-minute decode tails.
+
+### Frontend (Vercel API routes)
+
+#### Changed
+- **Timeout alignment for long-running routes**:
+  - Added `runtime="nodejs"` + `maxDuration=300` to `analyze-image`, `differential`, `debate-turn`, and `summary` routes.
+  - Increased backend fetch timeout for `analyze-image` and `differential` to `295000ms`.
+- **Health-probe pressure control** (`frontend/app/api/health/route.ts`):
+  - Added 5s backend timeout to fail fast instead of waiting on long queue stalls.
+
+### Documentation
+
+#### Updated
+- `DEPLOYMENT.md` and `modal_backend/README.md` updated with new concurrency env vars and `vllm-metrics` endpoint.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Vercel returned 504 while Modal later completed successfully.
+   - **Why**: Frontend route timeout elapsed while request was still queued/running on backend.
+   - **Resolution**: Increased route max duration/timeout and enabled backend input concurrency.
+   - **Lesson**: Timeout budgets must include queue time, not just execution time.
+
+2. **Problem**: Warmup health checks showed long wall-clock durations with tiny execution time.
+   - **Why**: Health requests were waiting behind long inference work in a single-lane input path.
+   - **Resolution**: Enabled input concurrency and made health route fail fast at 5 seconds on frontend.
+   - **Workaround**: Monitor `GET /vllm-metrics` during load to confirm queue behavior.
+
+## [2026-02-22] Session 24 — Snapshot Modes (CPU Default, GPU Opt-In) + RAG Query Cache
+
+### Backend (modal_backend)
+
+#### Changed
+- **Snapshot-capable Modal class config** (`modal_backend/app.py`):
+  - Added env-driven snapshot toggles:
+    - `ENABLE_MEMORY_SNAPSHOT` (default `true`)
+    - `ENABLE_GPU_SNAPSHOT` (default `false`, opt-in)
+  - Wired `@app.cls(...)` with `enable_memory_snapshot` and optional `experimental_options={"enable_gpu_snapshot": True}`.
+  - Split lifecycle into `@modal.enter(snap=True)` + `@modal.enter(snap=False)` phases for snapshot-safe startup.
+
+- **vLLM runtime cache volume** (`modal_backend/app.py`):
+  - Added persistent volume mount at `/root/.cache/vllm` (`vllm-cache`) to retain vLLM runtime artifacts.
+  - Added `HF_XET_HIGH_PERFORMANCE=1` for faster Hugging Face transfer behavior.
+
+- **RAG retrieval query cache** (`modal_backend/app.py`):
+  - Added bounded in-memory LRU-style cache for debate retrieval contexts.
+  - Added configurable cache controls:
+    - `RAG_CACHE_TTL_SECONDS` (default `900`)
+    - `RAG_CACHE_MAX_ENTRIES` (default `256`)
+  - Added health visibility for cache hit/miss and entry counts.
+
+- **Dependency baseline refresh** (`modal_backend/app.py`, `modal_backend/requirements.txt`):
+  - Updated vLLM floor to `>=0.13.0`.
+  - Added `huggingface-hub>=0.36.0` explicit dependency.
+
+### Documentation
+
+#### Updated
+- `DEPLOYMENT.md`:
+  - Synced runtime config to current values (`scaledown_window=300`, snapshot settings, `vllm-cache` volume).
+  - Added optional env vars for snapshot and RAG cache tuning.
+- `modal_backend/README.md`:
+  - Added snapshot mode documentation and RAG cache env settings.
+  - Added `vllm-cache` volume description.
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Snapshot support was requested, but existing startup path used a single `@modal.enter()` flow.
+   - **Why**: Server startup, runtime state, and dependency initialization were tightly coupled.
+   - **Resolution**: Split startup lifecycle into snapshot-phase + restore-phase hooks with explicit mode handling.
+   - **Lesson**: Snapshot-ready deployments need phase-aware init design, not a single monolithic startup hook.
+
+2. **Problem**: Repeated similar debate prompts paid retrieval cost repeatedly.
+   - **Why**: RAG retrieval had persistent index cache, but no short-lived query-result cache.
+   - **Resolution**: Added bounded TTL query cache with deterministic keying from challenge + differential context.
+   - **Workaround**: Tune TTL/entry limits if stale context or memory pressure appears.
+
+## [2026-02-22] Session 23 — Token Budget Pre-Clamp, Endpoint Speed Tuning, and Cost-Aware Warmup
+
+### Backend (modal_backend)
+
+#### Changed
+- **vLLM pre-clamp before first request** (`modal_backend/app.py`, `modal_backend/gemini_orchestrator_modal.py`):
+  - Added estimated input-token budgeting to clamp `max_tokens` proactively before first call.
+  - Kept existing overflow retry logic as fallback.
+- **Token budget tuning for latency/quality balance**:
+  - `/differential`: `3072 -> 1792` default, retry down to `1536`, concise retry path at `1280`.
+  - `/summary`: `3072 -> 1536` default, concise retry path at `1152`.
+  - Debate MedGemma fallback: `2048 -> 1200` (retry `1024`).
+  - Orchestrator MedGemma query default now pre-clamped from a lower target (`1200`).
+  - `/analyze-image`: `768 -> 512` (retry `320`).
+- **Context compaction**:
+  - Added summary-specific debate round compaction (latest 4 rounds, capped challenge/response lengths).
+  - Added truncation caps for summary and differential prompt sections (history/labs/differential/rounds).
+  - `/analyze-image` prompt now uses compact triage summary and tighter concise-output instructions.
+- **RAG retrieval relevance hardening** (`modal_backend/app.py`):
+  - Debate retrieval call lowered to `top_k=8`.
+  - Added lightweight topic hints from challenge + differential names.
+  - Added diversity selector (limits repeated topic/source chunks) before prompt injection.
+- **Runtime/cost config**:
+  - Modal `scaledown_window`: `600 -> 300`.
+  - Replaced deprecated `TRANSFORMERS_CACHE` env with `HF_HOME` in Modal image setup.
+
+### Frontend
+
+#### Changed
+- **Cost-aware warmup** (`frontend/lib/useWarmup.ts`, `frontend/components/WarmupToast.tsx`, `frontend/app/page.tsx`):
+  - Warmup can now be intent-based via `NEXT_PUBLIC_WARMUP_AUTOSTART`.
+  - Upload page now starts warmup on Analyze action (on-demand).
+  - Added warmup poll cap (default 5 attempts) and paused-state toast copy for credit-saving behavior.
+- **Prompt payload compaction from UI**:
+  - Upload flow now caps image-context text injected into differential input (`frontend/app/page.tsx`).
+  - Summary request now sends compacted recent debate rounds (`frontend/app/summary/page.tsx`).
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: vLLM overflow retries were still happening after endpoint-level retry logic existed.
+   - **Why**: Budgets were only reduced after receiving a 400 overflow response.
+   - **Resolution**: Added proactive pre-clamp using estimated input-token sizing before the first vLLM call.
+   - **Lesson**: First-pass token budgeting should be preventative, not purely reactive.
+
+2. **Problem**: Speed optimization risked reducing answer quality too aggressively.
+   - **Why**: Lower max token caps can truncate structured JSON outputs.
+   - **Resolution**: Used balanced caps + concise retry prompts only when truncation is likely.
+   - **Lesson**: Pair lower budgets with explicit compact-output constraints and targeted retries.
+
+3. **Problem**: Warmup strategy needed to minimize credit burn while preserving usability for unpredictable judge timing.
+   - **Why**: Always-on or frequent auto warmup can consume credits during inactivity windows.
+   - **Resolution**: Switched warmup to env-controlled intent-based mode and capped warmup polling attempts.
+   - **Workaround**: Keep manual/on-demand warmup before active demo/testing sessions.
+
 ## [2026-02-22] Session 22 — Modal/Vercel Deployment Track Consolidation
 
 ### Scope
