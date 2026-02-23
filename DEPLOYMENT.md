@@ -104,22 +104,34 @@ After deploy:
 3. Run one full flow: upload -> differential -> debate -> summary.
 4. Run `logchecklist.md` against Modal + Vercel logs.
 
-## Next Session Patch Draft
+## Latest Patch (Sessions 27-33)
 
-For tomorrow's follow-up implementation, use `NEXT_PATCH_PLAN.md`.
+Applied from `NEXT_PATCH_PLAN.md` plus follow-up production hardening:
 
-Planned focus:
-
-- Clamp RAG retrieval query length before retriever call (avoid >500-char blocks)
-- Reduce differential/summary concise-retry frequency via modest token rebalance
-- Add retry/block counters in `/health` for fast post-deploy verification
+- RAG retrieval query now clamps to `<=480` chars before `retrieve()` (security max remains `500` in retriever).
+- Token budgets rebalanced to reduce concise retries:
+  - `/differential`: first pass `1152`, concise retry `896`
+  - `/summary`: first pass `1664`, concise retry `1280`
+- `/health` now includes lightweight counters:
+  - `differential_concise_retry_count`
+  - `summary_concise_retry_count`
+  - `rag_query_blocked_count`
+  - `extract_labs_fast_path_count`
+  - `extract_labs_llm_fallback_count`
+- `/extract-labs-file` now uses deterministic parsing before LLM fallback:
+  - `table-fast` for demo-style table PDFs
+  - `table-full` and `flat-full` for broader real-world PDF layouts
+- Debate citation normalization expanded for unknown-source guidelines (PMC/PubMed + major guideline organizations).
+- Frontend warmup + analyze flow now degrades gracefully:
+  - warmup pings: immediate -> ~2 min -> one fallback
+  - analyze uses partial success handling so image results are kept even if labs fail
 
 ## Cold Start Strategy
 
 Current behavior:
 
 - Frontend warmup sends an immediate health ping, then backoff polling.
-- Backoff sequence in UI logic: ~20s -> 30s -> 45s.
+- Warmup sequence in UI logic: immediate -> ~2 minutes -> one fallback check.
 - Health API proxy disables caching (`cache: "no-store"`).
 
 Relevant frontend files:
@@ -135,8 +147,22 @@ Implemented in `modal_backend/app.py` and `modal_backend/gemini_orchestrator_mod
 - Centralized vLLM response handling for non-200 errors.
 - Adaptive retry on `max_tokens` overflow (reduce generation budget).
 - Compaction + retry on `input_tokens` overflow (reduce prompt size).
+- Deterministic lab extraction path before generative fallback for PDF lab reports.
 - Debate prompt compaction (round/history/image/RAG trims) to stay under context limit.
 - Debate hard failures return HTTP 500 (enables frontend Retry UX).
+
+## Smoke Test Baseline (Session 33)
+
+Latest production smoke check (`/extract-labs-file`) against deployed endpoint:
+
+- `frontend/public/test-data/melanoma-labs.pdf` -> `10` labs, `0` abnormal
+- `frontend/public/test-data/pneumonia-labs.pdf` -> `8` labs, `6` abnormal
+- `frontend/public/test-data/sepsis-labs.pdf` -> `8` labs, `8` abnormal
+- `sterling-accuris-pathology-sample-report-unlocked.pdf` -> `16` labs, `7` abnormal
+- `Lab Report Example.pdf` -> `14` labs, `0` abnormal
+- `/health` counter deltas after run:
+  - `extract_labs_fast_path_count`: `+5`
+  - `extract_labs_llm_fallback_count`: `0`
 
 ## Citation Integrity Rules
 

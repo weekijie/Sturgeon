@@ -284,10 +284,17 @@ Before suggesting or implementing any new external tool, library, or API:
 - [x] **RAG query cache** — In-memory TTL+LRU-style retrieval cache for debate context
 - [x] **Queue/timeout hardening** — Enabled input concurrency + aligned Vercel route maxDuration/timeouts
 - [x] **vLLM queue observability** — Added `/vllm-metrics` debug endpoint
+- [x] **NEXT_PATCH_PLAN applied** — RAG query clamp (<=480), token rebalance, and `/health` counters
+- [x] **Citation fallback hardening** — CAP/PMC guideline links preserved via broader source mapping
+- [x] **Demo PDF lab flow enabled** — Demo cases now load real lab PDFs through `/extract-labs-file`
+- [x] **Analyze partial-success UX** — Image success preserved when lab extraction fails/timeouts
+- [x] **Warmup probe simplification** — Immediate + 2-minute + fallback checks to reduce noisy health polling
+- [x] **Deterministic lab parser hardening** — Multi-parser (`table-fast`/`table-full`/`flat-full`) before LLM fallback
+- [x] **Production smoke recheck passed** — Demo + local sample PDFs extract successfully with fast-path counter deltas
 
 ### Next Steps (Priority Order)
 
-1. [ ] Apply `NEXT_PATCH_PLAN.md` (RAG query-length clamp + retry-churn reduction + counters)
+1. [x] Apply `NEXT_PATCH_PLAN.md` (RAG query-length clamp + retry-churn reduction + counters)
 2. [ ] Prepare demo script (`DEMO_SCRIPT.md`)
 3. [ ] Record demo video (≤3 min)
 4. [ ] Write submission document
@@ -318,6 +325,8 @@ See `CHANGELOG.md` for all code changes.
 
 **Feb 22, 2026**: Systematic review corpus expansion. Added `pneumonia_antibiotics_sr.md` (CAP antibiotic network meta-analysis, CURB-65, treatment recommendations — JGIM 2024) and `sepsis_qsofa_sr.md` (SOFA/qSOFA/SIRS mortality prediction comparison, scoring tables — Arch Iran Med 2024). Corpus: 12 guidelines + 3 systematic reviews. Guide-RAG GS-4 config complete for all 3 demo cases (Melanoma, Pneumonia, Sepsis).
 **Feb 22-23, 2026**: Modal/Vercel production hardening complete for this pass. Added snapshot modes (CPU default, GPU opt-in), vLLM cache volume, RAG query cache, input concurrency, route timeout alignment, and `/vllm-metrics` observability. Post-deploy logs now meet key latency goals with remaining follow-up captured in `NEXT_PATCH_PLAN.md`.
+**Feb 23, 2026**: Session 27 patch applied from `NEXT_PATCH_PLAN.md`. Added RAG query clamp (<=480 chars) before retrieval, increased differential/summary token budgets to reduce concise retries, and exposed retry/block counters in `/health` for faster `logchecklist.md` verification.
+**Feb 23, 2026**: Sessions 28-33 follow-up hardening. Fixed CAP citation fallback mapping, switched demo cases to real PDF lab extraction, aligned warmup/timeout/partial-success frontend behavior, added deterministic multi-parser extraction (`table-fast`/`table-full`/`flat-full`) before LLM fallback, and validated production smoke tests on demo + local sample PDFs with `/health` extraction counters.
 
 ---
 

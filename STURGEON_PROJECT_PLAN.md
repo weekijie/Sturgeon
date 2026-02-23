@@ -1,7 +1,7 @@
 # Sturgeon - Complete Project Plan
 
 > **Deadline**: February 24, 2026 (~3 days remaining)  
-> **Status**: Submission prep + production hardening complete (final polish pending)
+> **Status**: Submission prep + production hardening/smoke validation complete (final polish pending)
 
 ---
 
@@ -515,6 +515,9 @@ Sturgeon/
 - [x] CPU snapshot default + GPU snapshot opt-in support
 - [x] Queue/timeout hardening (input concurrency + Vercel route maxDuration)
 - [x] vLLM observability endpoint (`/vllm-metrics`)
+- [x] NEXT_PATCH_PLAN follow-up patch (RAG clamp + retry tuning + `/health` counters)
+- [x] Deterministic PDF lab parsing before LLM fallback (`table-fast` / `table-full` / `flat-full`)
+- [x] Production smoke recheck passed on demo + local sample PDFs with extraction counter deltas
 - [ ] Fine-tune MedGemma for debate (stretch goal)
 - [ ] Demo video recorded (≤3 min)
 - [ ] Write-up completed (≤3 pages)
@@ -524,10 +527,11 @@ Sturgeon/
 
 ### Next Session Carry-Over
 
-- Follow-up patch queue documented in `NEXT_PATCH_PLAN.md`:
-  - RAG query-length clamp (avoid >500-char retrieval blocks)
-  - Reduce differential/summary concise-retry churn
-  - Add health counters for retry/block telemetry
+- `NEXT_PATCH_PLAN.md` has been applied (Session 27) and follow-up hardening validated in Sessions 28-33.
+- Remaining priority is submission prep:
+  - Demo script (`DEMO_SCRIPT.md`)
+  - Demo video (<=3 min)
+  - Submission write-up + Kaggle upload
 
 ---
 
