@@ -322,7 +322,7 @@ Core runtime model roles:
 │                                                              │
 │  Supporting Services:                                        │
 │  • MedSigLIP (image triage)                                 │
-│  • RAG Retriever (clinical guidelines)                      │
+│  • RAG Retriever (ChromaDB + all-MiniLM-L6-v2 embeddings)  │
 │  • Hallucination Checker (validation)                       │
 │  • Rate Limiter (API protection)                            │
 └─────────────────────────────────────────────────────────────┘
@@ -425,6 +425,7 @@ This project uses a consistent citation format for key technical references.
 - Google. (2025). *MedGemma 1.5 4B-it model card* [Model card]. Hugging Face. https://huggingface.co/google/medgemma-1.5-4b-it
 - Google. (2025). *MedSigLIP model card* [Model card]. Google Health AI Developer Foundations. https://developers.google.com/health-ai-developer-foundations/medsiglip/model-card
 - Google. (2025). *Gemini API documentation*. Google AI for Developers. https://ai.google.dev/gemini-api/docs
+- Sentence Transformers. (2025). *all-MiniLM-L6-v2* [Embedding model]. Hugging Face. https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
 
 ### Industry Reference (Non-Peer-Reviewed)
 
@@ -433,6 +434,7 @@ This project uses a consistent citation format for key technical references.
 ### In-Project Application Notes
 
 - Guide-RAG-inspired corpus composition is used (guidelines + systematic reviews), with 15 documents in the current RAG corpus.
+- RAG embeddings use `sentence-transformers/all-MiniLM-L6-v2` with a ChromaDB vector index.
 - Retriever defaults use `TOP_K_DEFAULT=12` and `CHUNK_OVERLAP=500`; in the Modal production debate path, runtime retrieval applies `top_k=8` plus relevance filtering/diversity compaction before prompt injection.
 - Dev-only LLM-as-Judge scoring (faithfulness, relevance, comprehensiveness) is available via `/rag-evaluate` when `ENABLE_RAG_EVAL` is enabled.
 - Runtime model stack combines Gemini Flash (orchestration), MedGemma 1.5 4B-it (medical reasoning), and MedSigLIP (image triage).
