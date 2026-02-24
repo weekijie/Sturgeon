@@ -24,10 +24,6 @@
     <br />
     <em>Like House MD's diagnostic team, but AI-powered</em>
     <br />
-    <br />
-    <a href="https://github.com/weekijie/Sturgeon/blob/main/STURGEON_PROJECT_PLAN.md"><strong>Explore the docs »</strong></a>
-    <br />
-    <br />
     <a href="#usage">View Demo</a>
     &middot;
     <a href="https://github.com/weekijie/Sturgeon/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
@@ -94,13 +90,6 @@ Sturgeon simulates a **diagnostic case conference** using AI:
 
 Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/medgemma-impact-challenge) - targeting the Main Track + Agentic Workflow Prize.
 
-### Submission Quick Links
-
-- Deployment runbook: `DEPLOYMENT.md`
-- Final project plan + demo script: `STURGEON_PROJECT_PLAN.md`
-- Full implementation history: `CHANGELOG.md`
-- Core project context/instructions: `CLAUDE.md`
-
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
@@ -112,12 +101,10 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 - **🔍 RAG-Enhanced Reasoning** - Clinical guidelines with automatic citation extraction
 - **🚀 Production Queue Hardening** - Modal input concurrency + Vercel timeout alignment
 - **🛡️ Hallucination Prevention** - Auto-validation with retry on detected fabrications
-- **📐 LLM-as-Judge Evaluation** - Faithfulness, relevance, comprehensiveness metrics
 - **⚡ Smart Rate Limiting** - Per-endpoint quota management with visual feedback
 - **💾 Session Persistence** - Cases saved locally, resume anytime
 - **🎙️ Voice-to-Text Input** - Dictate patient history and debate prompts (browser-native)
 - **📝 Streaming Chat UX** - Progressive response rendering + lightweight request stage indicator
-- **📋 One-Click Copy** - Copy AI responses from each message
 - **📱 Mobile Responsive** - Full functionality on any device
 - **🎯 MedSigLIP Triage** - Fast image classification before deep analysis
 
@@ -144,13 +131,12 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 ## Getting Started
 
 For production deployment (Modal + Vercel), see `DEPLOYMENT.md`.
-For submission planning/checklist, see `STURGEON_PROJECT_PLAN.md`.
 
 ### Prerequisites
 
 - **Node.js** 18+ 
 - **Python** 3.10+
-- **GPU** with 16GB+ VRAM (NVIDIA CUDA or AMD ROCm)
+- **GPU** with 8GB+ VRAM (NVIDIA CUDA or AMD ROCm)
 - **MedGemma Access** - [Request on HuggingFace](https://huggingface.co/google/medgemma-1.5-4b-it)
 - **Gemini API Key** (optional) - [Get free key](https://aistudio.google.com/apikey)
 
@@ -175,11 +161,8 @@ python -m venv .venv
 # Activate (Linux/Mac)
 # source .venv/bin/activate
 
-# Install dependencies (Windows explicit virtualenv interpreter)
-.venv\Scripts\python -m pip install -r ai-service/requirements.txt
-
-# Linux/Mac alternative
-# .venv/bin/python -m pip install -r ai-service/requirements.txt
+# Install dependencies
+pip install -r ai-service/requirements.txt
 ```
 
 #### 3. Set up frontend
@@ -217,7 +200,8 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
 **Terminal 1 - Backend:**
 ```bash
-.venv\Scripts\python -m uvicorn ai-service.main:app --port 8000
+.venv\Scripts\activate
+python -m uvicorn ai-service.main:app --port 8000
 ```
 
 **Terminal 2 - Frontend:**
@@ -310,7 +294,7 @@ Sturgeon uses an **agentic dual-model architecture** that maps directly to the A
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │              AGENTIC ORCHESTRATION                       ││
 │  │  ┌──────────────┐      ┌──────────────────────────┐    ││
-│  │  │   Gemini 3   │─────▶│  MedGemma 1.5 4B-it     │    ││
+│  │  │   Gemini 3   │─────▶│  MedGemma 4B-it         │    ││
 │  │  │  Flash       │◀─────│  (HAI-DEF Specialist)    │    ││
 │  │  │              │      │                          │    ││
 │  │  │ • Manages    │      │ • Clinical reasoning     │    ││
@@ -353,7 +337,6 @@ Sturgeon uses an **agentic dual-model architecture** that maps directly to the A
 | `/debate-turn` | POST | 20/min | Handle debate round (orchestrated) |
 | `/summary` | POST | 10/min | Generate final diagnosis summary |
 | `/rag-status` | GET | - | RAG retriever status & statistics |
-| `/rag-evaluate` | POST | - | RAG faithfulness/relevance/comprehensiveness eval (dev only) |
 | `/vllm-metrics` | GET | - | vLLM queue/throughput debug metrics |
 
 All endpoints return rate limit headers:
@@ -376,7 +359,6 @@ All endpoints return rate limit headers:
 - [x] RAG integration with clinical guidelines (14 documents)
 - [x] Comprehensive citation detection (15+ medical organizations)
 - [x] Hallucination prevention with auto-retry
-- [x] LLM-as-Judge evaluation framework
 - [x] Rate limiting with visual UI feedback
 - [x] Session persistence via localStorage
 - [x] Mobile responsive design
@@ -386,8 +368,8 @@ All endpoints return rate limit headers:
 ### 🚧 In Progress
 
 - [ ] Demo video recording
-- [ ] Submission write-up (Kaggle template)
-- [ ] README screenshot polish for final submission
+- [ ] Submission documentation
+- [ ] Final logchecklist pass with retry-churn patch (`NEXT_PATCH_PLAN.md`)
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
 
@@ -455,6 +437,7 @@ This project uses the CC BY 4.0 license to comply with MedGemma Impact Challenge
 [issues-url]: https://github.com/weekijie/Sturgeon/issues
 [license-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=for-the-badge
 [license-url]: https://github.com/weekijie/Sturgeon/blob/main/LICENSE
+[product-screenshot]: frontend/public/test-data/test1.png
 
 [Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
 [Next-url]: https://nextjs.org/
