@@ -24,11 +24,6 @@
     <br />
     <em>Like House MD's diagnostic team, but AI-powered</em>
     <br />
-    <a href="#usage">View Demo</a>
-    &middot;
-    <a href="https://github.com/weekijie/Sturgeon/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
-    &middot;
-    <a href="https://github.com/weekijie/Sturgeon/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 </div>
 
@@ -57,6 +52,7 @@
     <li><a href="#architecture">Architecture</a></li>
     <li><a href="#api-reference">API Reference</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#branch-strategy">Branch Strategy</a></li>
     <li><a href="#research--references">Research & References</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#acknowledgments">Acknowledgments</a></li>
@@ -134,7 +130,7 @@ For production deployment (Modal + Vercel), see `DEPLOYMENT.md`.
 
 ### Prerequisites
 
-- **Node.js** 18+ 
+- **Node.js** 20+ 
 - **Python** 3.10+
 - **GPU** with 8GB+ VRAM (NVIDIA CUDA or AMD ROCm)
 - **MedGemma Access** - [Request on HuggingFace](https://huggingface.co/google/medgemma-1.5-4b-it)
@@ -161,8 +157,11 @@ python -m venv .venv
 # Activate (Linux/Mac)
 # source .venv/bin/activate
 
-# Install dependencies
-pip install -r ai-service/requirements.txt
+# Install dependencies (Windows explicit virtualenv interpreter)
+.venv\Scripts\python -m pip install -r ai-service/requirements.txt
+
+# Linux/Mac alternative
+# .venv/bin/python -m pip install -r ai-service/requirements.txt
 ```
 
 #### 3. Set up frontend
@@ -186,6 +185,16 @@ cp ai-service/.env.example ai-service/.env
 # ALLOWED_ORIGINS=http://localhost:3000
 ```
 
+Frontend API route configuration (`frontend/.env.local`):
+
+```bash
+# Local backend
+BACKEND_URL=http://localhost:8000
+
+# Production backend example
+# BACKEND_URL=https://<your-modal-endpoint>.modal.run
+```
+
 #### 2. AMD GPU Setup (if applicable)
 
 ```bash
@@ -200,8 +209,7 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
 **Terminal 1 - Backend:**
 ```bash
-.venv\Scripts\activate
-python -m uvicorn ai-service.main:app --port 8000
+.venv\Scripts\python -m uvicorn main:app --app-dir ai-service --port 8000
 ```
 
 **Terminal 2 - Frontend:**
@@ -264,7 +272,7 @@ curl -X POST http://localhost:8000/differential \
     "lab_values": {"WBC": "11.2", "CRP": "15"}
   }'
 
-# Response includes rate limit headers:
+# Response includes rate limit headers for rate-limited endpoints:
 # X-RateLimit-Limit: 10
 # X-RateLimit-Remaining: 9
 # X-RateLimit-Window: 60
@@ -277,7 +285,12 @@ curl -X POST http://localhost:8000/differential \
 <!-- ARCHITECTURE -->
 ## Architecture
 
-Sturgeon uses an **agentic dual-model architecture** that maps directly to the Agentic Workflow Prize criteria:
+Sturgeon uses an **agentic core dual-model architecture** (Gemini + MedGemma) with MedSigLIP triage that maps directly to the Agentic Workflow Prize criteria:
+
+Core runtime model roles:
+- **Gemini Flash** - conversation orchestration and synthesis
+- **MedGemma 1.5 4B-it** - medical specialist reasoning and diagnosis
+- **MedSigLIP** - medical image triage before deep reasoning
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -294,7 +307,7 @@ Sturgeon uses an **agentic dual-model architecture** that maps directly to the A
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │              AGENTIC ORCHESTRATION                       ││
 │  │  ┌──────────────┐      ┌──────────────────────────┐    ││
-│  │  │   Gemini 3   │─────▶│  MedGemma 4B-it         │    ││
+│  │  │   Gemini 3   │─────▶│  MedGemma 1.5 4B-it     │    ││
 │  │  │  Flash       │◀─────│  (HAI-DEF Specialist)    │    ││
 │  │  │              │      │                          │    ││
 │  │  │ • Manages    │      │ • Clinical reasoning     │    ││
@@ -318,6 +331,7 @@ Sturgeon uses an **agentic dual-model architecture** that maps directly to the A
 
 - **MedGemma** wasn't trained for multi-turn conversation, but excels at medical reasoning
 - **Gemini** handles what MedGemma can't: context management, debate flow, synthesis
+- **MedSigLIP** provides fast modality-aware triage before detailed MedGemma image reasoning
 - **Result**: Best of both worlds - medical accuracy + conversational fluency
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -337,9 +351,10 @@ Sturgeon uses an **agentic dual-model architecture** that maps directly to the A
 | `/debate-turn` | POST | 20/min | Handle debate round (orchestrated) |
 | `/summary` | POST | 10/min | Generate final diagnosis summary |
 | `/rag-status` | GET | - | RAG retriever status & statistics |
-| `/vllm-metrics` | GET | - | vLLM queue/throughput debug metrics |
+| `/rag-evaluate` | POST | - | LLM-as-Judge RAG evaluation (dev only, requires `ENABLE_RAG_EVAL`) |
+| `/vllm-metrics` | GET | - | vLLM queue/throughput debug metrics (Modal backend) |
 
-All endpoints return rate limit headers:
+Rate-limited endpoints return these headers:
 - `X-RateLimit-Limit`: Maximum requests per window
 - `X-RateLimit-Remaining`: Remaining requests
 - `X-RateLimit-Window`: Window size in seconds
@@ -356,7 +371,7 @@ All endpoints return rate limit headers:
 
 - [x] Agentic dual-model architecture (Gemini + MedGemma)
 - [x] Multi-modal upload (images + lab reports)
-- [x] RAG integration with clinical guidelines (14 documents)
+- [x] RAG integration with clinical guidelines (15 documents) (12 guidelines + 3 systematic reviews)
 - [x] Comprehensive citation detection (15+ medical organizations)
 - [x] Hallucination prevention with auto-retry
 - [x] Rate limiting with visual UI feedback
@@ -365,13 +380,29 @@ All endpoints return rate limit headers:
 - [x] 156 backend unit tests passing
 - [x] Modal + Vercel production deployment (queue/timeout hardening)
 
-### 🚧 In Progress
+### 🔮 Future Considerations
 
-- [ ] Demo video recording
-- [ ] Submission documentation
-- [ ] Final logchecklist pass with retry-churn patch (`NEXT_PATCH_PLAN.md`)
+- [ ] Replace browser Web Speech API voice input with **MedASR** for more reliable medical dictation
+- [ ] Add **dev-only RAG evaluation during debate turns** (shadow scoring via `/rag-evaluate`, gated by `ENABLE_RAG_EVAL`, no impact on user-facing responses)
+- [ ] Add **past cases history** (searchable prior case timelines with outcomes and follow-up context)
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+## Branch Strategy
+
+- `main`: local stable branch
+- `development` (`dev`): local branch for experimental features and validation
+- `production`: deployed web demo/deployment branch
+
+Suggested workflow:
+
+1. Build and test in `development`
+2. Promote stable local-ready changes into `main`
+3. Merge deployment-approved changes into `production` for live demo rollout
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -380,22 +411,30 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
 <!-- RESEARCH -->
 ## Research & References
 
-This project incorporates techniques from cutting-edge medical AI research:
+This project uses a consistent citation format for key technical references.
 
-### Hallucination Prevention
-- **CHECK Framework** - Garcia-Fernandez et al. "Trustworthy AI for Medicine: Continuous Hallucination Detection and Elimination with CHECK." *arXiv:2506.11129* (2025)
-- **HALO Framework** - Anjum et al. "HALO: Hallucination Analysis and Learning Optimization to Empower LLMs with Retrieval-Augmented Context for Guided Clinical Decision Making." *arXiv:2409.10011* (2024)
+### Research Papers
 
-### RAG & Citations
-- **Guide-RAG** - DiGiacomo et al. "Guide-RAG: Evidence-Driven Corpus Curation for Retrieval-Augmented Generation in Long COVID." *arXiv:2510.15782* (2025)
-  - Implemented: GS-4 configuration (guidelines + systematic reviews)
-  - Parameters: TOP_K=12, CHUNK_OVERLAP=500
-  - Evaluation: LLM-as-Judge framework (faithfulness, relevance, comprehensiveness)
-- **Mayo Reverse RAG** - Plumb, Taryn. "Mayo Clinic's secret weapon against AI hallucinations: Reverse RAG in action." *VentureBeat* (2025)
+- Anjum, N., et al. (2024). *HALO: Hallucination Analysis and Learning Optimization to Empower LLMs with Retrieval-Augmented Context for Guided Clinical Decision Making*. arXiv. https://arxiv.org/abs/2409.10011
+- DiGiacomo, N., et al. (2025). *Guide-RAG: Evidence-Driven Corpus Curation for Retrieval-Augmented Generation in Long COVID*. arXiv. https://arxiv.org/abs/2510.15782
+- Garcia-Fernandez, R., et al. (2025). *Trustworthy AI for Medicine: Continuous Hallucination Detection and Elimination with CHECK*. arXiv. https://arxiv.org/abs/2506.11129
 
-### Medical AI
-- **MedGemma** - Google's medical foundation model (HAI-DEF)
-- **MedSigLIP** - Biomedical vision-language model for image understanding
+### Model and Platform References
+
+- Google. (2025). *MedGemma 1.5 4B-it model card* [Model card]. Hugging Face. https://huggingface.co/google/medgemma-1.5-4b-it
+- Google. (2025). *MedSigLIP model card* [Model card]. Google Health AI Developer Foundations. https://developers.google.com/health-ai-developer-foundations/medsiglip/model-card
+- Google. (2025). *Gemini API documentation*. Google AI for Developers. https://ai.google.dev/gemini-api/docs
+
+### Industry Reference (Non-Peer-Reviewed)
+
+- Plumb, T. (2025). *Mayo Clinic's secret weapon against AI hallucinations: Reverse RAG in action*. VentureBeat.
+
+### In-Project Application Notes
+
+- Guide-RAG-inspired corpus composition is used (guidelines + systematic reviews), with 15 documents in the current RAG corpus.
+- Retriever defaults use `TOP_K_DEFAULT=12` and `CHUNK_OVERLAP=500`; in the Modal production debate path, runtime retrieval applies `top_k=8` plus relevance filtering/diversity compaction before prompt injection.
+- Dev-only LLM-as-Judge scoring (faithfulness, relevance, comprehensiveness) is available via `/rag-evaluate` when `ENABLE_RAG_EVAL` is enabled.
+- Runtime model stack combines Gemini Flash (orchestration), MedGemma 1.5 4B-it (medical reasoning), and MedSigLIP (image triage).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -437,7 +476,6 @@ This project uses the CC BY 4.0 license to comply with MedGemma Impact Challenge
 [issues-url]: https://github.com/weekijie/Sturgeon/issues
 [license-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=for-the-badge
 [license-url]: https://github.com/weekijie/Sturgeon/blob/main/LICENSE
-[product-screenshot]: frontend/public/test-data/test1.png
 
 [Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
 [Next-url]: https://nextjs.org/

@@ -44,7 +44,7 @@ rag_audit.log
 
 # Skills
 .agents/
-CLAUDE.md
+
 
 # HuggingFace cache (large files)
 .cache/huggingface/
