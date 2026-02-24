@@ -1,6 +1,6 @@
 # Sturgeon - Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project will be documented in this file..
 
 ## [2026-02-23] Session 36 - Debate UX Follow-up (Snippet-like Copy, Scrollbar Restore, Stream + Jank Tuning)
 

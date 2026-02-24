@@ -1,6 +1,6 @@
 # Sturgeon Deployment Guide
 
-This is the current deployment reference for the Modal backend and Vercel frontend.
+This is the current deployment reference for the Modal backend and Vercel frontend..
 
 ## Architecture
 
