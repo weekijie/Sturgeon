@@ -24,10 +24,6 @@
     <br />
     <em>Like House MD's diagnostic team, but AI-powered</em>
     <br />
-    <br />
-    <a href="https://github.com/weekijie/Sturgeon/blob/main/STURGEON_PROJECT_PLAN.md"><strong>Explore the docs »</strong></a>
-    <br />
-    <br />
     <a href="#usage">View Demo</a>
     &middot;
     <a href="https://github.com/weekijie/Sturgeon/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
