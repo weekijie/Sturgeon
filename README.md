@@ -52,11 +52,12 @@
     <li><a href="#usage">Usage</a></li>
     <li><a href="#architecture">Architecture</a></li>
     <li><a href="#api-reference">API Reference</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#branch-strategy">Branch Strategy</a></li>
-    <li><a href="#research--references">Research & References</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
+     <li><a href="#roadmap">Roadmap</a></li>
+     <li><a href="#branch-strategy">Branch Strategy</a></li>
+      <li><a href="#local-vs-cloud-runtime">Local vs Cloud Runtime</a></li>
+     <li><a href="#research--references">Research & References</a></li>
+     <li><a href="#license">License</a></li>
+     <li><a href="#acknowledgments">Acknowledgments</a></li>
   </ol>
 </details>
 
@@ -404,6 +405,46 @@ Suggested workflow:
 1. Build and test in `development`
 2. Promote stable local-ready changes into `main`
 3. Merge deployment-approved changes into `production` for live demo rollout
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+## Local vs Cloud Runtime
+
+Sturgeon intentionally keeps two backend/runtime tracks:
+
+- Local (`main` / `development`): `ai-service/` for direct development and debugging.
+- Cloud (`production`): `modal_backend/` for deployed web demo reliability on Modal + Vercel.
+
+### Backend Differences (`ai-service/` vs `modal_backend/`)
+
+| Area | Local (`ai-service/`) | Cloud (`modal_backend/`) |
+|---|---|---|
+| Inference execution | Direct in-process `transformers` model calls (`medgemma.py`) | vLLM OpenAI-compatible server (`:6501`) + HTTP calls + separate MedSigLIP server (`:6502`) |
+| Deployment model | Standard FastAPI lifespan startup | Modal class lifecycle with snapshot phases, volumes, and autoscaling controls |
+| Core infra | Single FastAPI process | Multi-process container: FastAPI + vLLM + MedSigLIP |
+| Endpoint surface | Core API endpoints | Core API + `/vllm-metrics` debug endpoint |
+| Input hardening | Pydantic validation + endpoint checks | Adds explicit sanitization layer (`input_sanitization.py`) for text/files/types |
+| Logging/traceability | Standard logging | Structured JSON logs + request IDs (`structured_logging.py`) |
+| RAG retrieval flow | Clinical-context query enrichment + relevance threshold filtering | Query clamp (`<=480`), explicit `top_k=8`, topic hints, diversity compaction, context trim |
+| RAG cache/telemetry | No runtime query cache | In-memory TTL query cache + cache hit/miss telemetry |
+| Lab PDF extraction | PDF/TXT extraction -> LLM parse (+ retry) | Deterministic multi-parser fast path (`table-fast`/`table-full`/`flat-full`) before LLM fallback |
+| Token/timeout resilience | Direct generation budgets, lighter overflow handling | Centralized vLLM error handling with pre-clamp + adaptive retries for `max_tokens` and `input_tokens` overflow |
+| Health observability | Basic health payload | Health payload includes snapshot mode, cache stats, retry/fallback counters, concurrency config |
+
+### Frontend Differences (local flow vs production-hardened flow)
+
+Production branch frontend adds deployment-focused resilience on top of local behavior:
+
+- Route hardening for long AI requests (`runtime="nodejs"`, `maxDuration`, extended timeouts on API routes).
+- Health proxy route (`/api/health`) with fast-fail timeout and `cache: "no-store"` behavior.
+- Warmup UX (`useWarmup`, `WarmupToast`) with bounded polling to balance readiness and cost.
+- Partial-success multimodal analyze flow (`Promise.allSettled`) so image success is preserved if lab extraction fails.
+- Voice input and debate UX hardening (stream pacing, copy controls, timeline stages, citation URL gating).
+- Demo case loading through real PDF lab files (`frontend/public/test-data/*.pdf`) to exercise production extraction path.
+
+This split keeps local iteration simple while keeping the deployed demo stable under serverless GPU cold starts and queue pressure.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
