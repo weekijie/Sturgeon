@@ -387,6 +387,7 @@ Rate-limited endpoints return these headers:
 - [ ] Replace browser Web Speech API voice input with **MedASR** for more reliable medical dictation
 - [ ] Add **dev-only RAG evaluation during debate turns** (shadow scoring via `/rag-evaluate`, gated by `ENABLE_RAG_EVAL`, no impact on user-facing responses)
 - [ ] Add **past cases history** (searchable prior case timelines with outcomes and follow-up context)
+- [ ] Evolve Gemini orchestration from the current deterministic pipeline to guarded tool routing
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
 
