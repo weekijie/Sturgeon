@@ -5,16 +5,15 @@
  * Aligned with Guide-RAG paper evaluation framework.
  * 
  * 3 Cases:
- * 1. Melanoma (Dermatology) — Image + labs
- * 2. Pneumonia (Radiology) — Image + labs
- * 3. Sepsis (Critical Care) — Labs-focused shock case
+ * 1. Melanoma (Dermatology) — Visual diagnosis star
+ * 2. Pneumonia (Radiology) — Classic MedGemma case
+ * 3. Sepsis (Multi-modal) — Lab extraction + reasoning
  */
 
 export interface DemoCase {
   id: string;
   name: string;
-  category: "Dermatology" | "Radiology" | "Critical Care";
-  evidenceMode: "Image + Labs" | "Labs only";
+  category: "Dermatology" | "Radiology" | "Multi-Modal";
   description: string;
   patientHistory: string;
   labValues: Record<string, { value: string; unit: string; status: "normal" | "high" | "low" }>;
@@ -28,7 +27,6 @@ export const demoCases: DemoCase[] = [
     id: "melanoma",
     name: "Suspected Melanoma",
     category: "Dermatology",
-    evidenceMode: "Image + Labs",
     description: "45-year-old male with changing pigmented lesion on upper back",
     patientHistory: `45-year-old male presents with a pigmented lesion on his upper back that he noticed 6 months ago. He reports it has been growing larger and the borders seem irregular. No family history of melanoma. Works as a construction worker with significant sun exposure.
 
@@ -81,7 +79,6 @@ Physical Examination:
     id: "pneumonia",
     name: "Community-Acquired Pneumonia",
     category: "Radiology",
-    evidenceMode: "Image + Labs",
     description: "68-year-old male with fever, cough, and chest X-ray infiltrate",
     patientHistory: `68-year-old male presents with 4 days of fever, productive cough with yellow sputum, right-sided pleuritic chest pain, and progressive dyspnea.
 
@@ -144,8 +141,7 @@ Physical Examination:
   {
     id: "sepsis",
     name: "Septic Shock (UTI Source)",
-    category: "Critical Care",
-    evidenceMode: "Labs only",
+    category: "Multi-Modal",
     description: "72-year-old female with confusion, fever, hypotension",
     patientHistory: `72-year-old female with a history of diabetes and recurrent UTIs presents from a nursing home with 2 days of confusion, fever, and decreased urine output. She was last seen normal 48 hours ago.
 

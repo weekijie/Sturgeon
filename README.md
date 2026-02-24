@@ -14,7 +14,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/weekijie/Sturgeon">
-    <img src="frontend/public/sturgeon_traced.svg" alt="Logo" width="80" height="80">
+    <img src="frontend/public/sturgeon-logo.svg" alt="Logo" width="80" height="80">
   </a>
 
 <h3 align="center">Sturgeon</h3>
@@ -24,7 +24,6 @@
     <br />
     <em>Like House MD's diagnostic team, but AI-powered</em>
     <br />
-    <a href="https://www.youtube.com/watch?v=3tTzITIdABQe">View Demo Video</a>
   </p>
 </div>
 
@@ -53,6 +52,7 @@
     <li><a href="#architecture">Architecture</a></li>
     <li><a href="#api-reference">API Reference</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#branch-strategy">Branch Strategy</a></li>
     <li><a href="#research--references">Research & References</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#acknowledgments">Acknowledgments</a></li>
@@ -352,7 +352,7 @@ Core runtime model roles:
 | `/summary` | POST | 10/min | Generate final diagnosis summary |
 | `/rag-status` | GET | - | RAG retriever status & statistics |
 | `/rag-evaluate` | POST | - | LLM-as-Judge RAG evaluation (dev only, requires `ENABLE_RAG_EVAL`) |
-| `/vllm-metrics` | GET | - | vLLM queue/throughput debug metrics |
+| `/vllm-metrics` | GET | - | vLLM queue/throughput debug metrics (Modal backend) |
 
 Rate-limited endpoints return these headers:
 - `X-RateLimit-Limit`: Maximum requests per window
@@ -380,7 +380,29 @@ Rate-limited endpoints return these headers:
 - [x] 156 backend unit tests passing
 - [x] Modal + Vercel production deployment (queue/timeout hardening)
 
+### 🔮 Future Considerations
+
+- [ ] Replace browser Web Speech API voice input with **MedASR** for more reliable medical dictation
+- [ ] Add **dev-only RAG evaluation during debate turns** (shadow scoring via `/rag-evaluate`, gated by `ENABLE_RAG_EVAL`, no impact on user-facing responses)
+- [ ] Add **past cases history** (searchable prior case timelines with outcomes and follow-up context)
+
 See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+## Branch Strategy
+
+- `main`: local stable branch
+- `development` (`dev`): local branch for experimental features and validation
+- `production`: deployed web demo/deployment branch
+
+Suggested workflow:
+
+1. Build and test in `development`
+2. Promote stable local-ready changes into `main`
+3. Merge deployment-approved changes into `production` for live demo rollout
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -389,32 +411,30 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
 <!-- RESEARCH -->
 ## Research & References
 
-This project incorporates techniques from cutting-edge medical AI research:
+This project uses a consistent citation format for key technical references.
 
-### Hallucination Prevention
-- **CHECK Framework** - Garcia-Fernandez et al. "Trustworthy AI for Medicine: Continuous Hallucination Detection and Elimination with CHECK." *arXiv:2506.11129* (2025)
-- **HALO Framework** - Anjum et al. "HALO: Hallucination Analysis and Learning Optimization to Empower LLMs with Retrieval-Augmented Context for Guided Clinical Decision Making." *arXiv:2409.10011* (2024)
+### Research Papers
 
-### RAG & Citations
-- **Guide-RAG** - DiGiacomo et al. "Guide-RAG: Evidence-Driven Corpus Curation for Retrieval-Augmented Generation in Long COVID." *arXiv:2510.15782* (2025)
-  - Implemented: GS-4 style corpus composition (guidelines + systematic reviews)
-  - Current corpus: 15 docs total (12 guidelines + 3 systematic reviews)
-  - Retrieval tuning: `TOP_K=12`, `CHUNK_OVERLAP=500`
-  - Runtime retrieval in debate path uses compact top-k selection and distance filtering for relevance
-  - Evaluation path includes LLM-as-Judge metrics (faithfulness, relevance, comprehensiveness) via `/rag-evaluate` (dev only)
-- **Mayo Reverse RAG** - Plumb, Taryn. "Mayo Clinic's secret weapon against AI hallucinations: Reverse RAG in action." *VentureBeat* (2025)
+- Anjum, N., et al. (2024). *HALO: Hallucination Analysis and Learning Optimization to Empower LLMs with Retrieval-Augmented Context for Guided Clinical Decision Making*. arXiv. https://arxiv.org/abs/2409.10011
+- DiGiacomo, N., et al. (2025). *Guide-RAG: Evidence-Driven Corpus Curation for Retrieval-Augmented Generation in Long COVID*. arXiv. https://arxiv.org/abs/2510.15782
+- Garcia-Fernandez, R., et al. (2025). *Trustworthy AI for Medicine: Continuous Hallucination Detection and Elimination with CHECK*. arXiv. https://arxiv.org/abs/2506.11129
 
-### Model Stack
-- **MedGemma 1.5 4B-it** - primary HAI-DEF medical specialist for extraction, differential reasoning, and summary generation
-- **Gemini Flash** - orchestration model for multi-turn state management, routing, and synthesis
-- **MedSigLIP** - medical image triage model used before MedGemma deep image reasoning
+### Model and Platform References
 
-### Clinical Content Sources
-- **CDC** clinical guidance corpus (respiratory, sepsis, legionella)
-- **WHO** guidance corpus (meningitis, TB, hepatitis B)
-- **USPSTF** recommendations corpus (breast, colorectal, diabetes, cardiovascular)
-- **AAD melanoma** guideline corpus
-- Systematic reviews for melanoma, pneumonia, and sepsis in `guidelines/systematic_reviews/`
+- Google. (2025). *MedGemma 1.5 4B-it model card* [Model card]. Hugging Face. https://huggingface.co/google/medgemma-1.5-4b-it
+- Google. (2025). *MedSigLIP model card* [Model card]. Google Health AI Developer Foundations. https://developers.google.com/health-ai-developer-foundations/medsiglip/model-card
+- Google. (2025). *Gemini API documentation*. Google AI for Developers. https://ai.google.dev/gemini-api/docs
+
+### Industry Reference (Non-Peer-Reviewed)
+
+- Plumb, T. (2025). *Mayo Clinic's secret weapon against AI hallucinations: Reverse RAG in action*. VentureBeat.
+
+### In-Project Application Notes
+
+- Guide-RAG-inspired corpus composition is used (guidelines + systematic reviews), with 15 documents in the current RAG corpus.
+- Retriever defaults use `TOP_K_DEFAULT=12` and `CHUNK_OVERLAP=500`; in the Modal production debate path, runtime retrieval applies `top_k=8` plus relevance filtering/diversity compaction before prompt injection.
+- Dev-only LLM-as-Judge scoring (faithfulness, relevance, comprehensiveness) is available via `/rag-evaluate` when `ENABLE_RAG_EVAL` is enabled.
+- Runtime model stack combines Gemini Flash (orchestration), MedGemma 1.5 4B-it (medical reasoning), and MedSigLIP (image triage).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
