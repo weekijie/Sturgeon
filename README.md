@@ -72,8 +72,6 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Sturgeon Screenshot][product-screenshot]](https://github.com/weekijie/Sturgeon)
-
 **Sturgeon** is a Clinical Debate AI that brings House MD-style differential diagnosis to solo practitioners and resource-constrained settings. When you don't have a diagnostic team to challenge your thinking, Sturgeon acts as your AI colleague—generating differentials, defending its reasoning, and adapting when you challenge its conclusions.
 
 ### The Problem
@@ -95,6 +93,13 @@ Sturgeon simulates a **diagnostic case conference** using AI:
 5. **Reach consensus** - Final diagnosis with full reasoning chain
 
 Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/medgemma-impact-challenge) - targeting the Main Track + Agentic Workflow Prize.
+
+### Submission Quick Links
+
+- Deployment runbook: `DEPLOYMENT.md`
+- Final project plan + demo script: `STURGEON_PROJECT_PLAN.md`
+- Full implementation history: `CHANGELOG.md`
+- Core project context/instructions: `CLAUDE.md`
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -139,7 +144,7 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 ## Getting Started
 
 For production deployment (Modal + Vercel), see `DEPLOYMENT.md`.
-For the queued follow-up patch list, see `NEXT_PATCH_PLAN.md`.
+For submission planning/checklist, see `STURGEON_PROJECT_PLAN.md`.
 
 ### Prerequisites
 
@@ -170,8 +175,11 @@ python -m venv .venv
 # Activate (Linux/Mac)
 # source .venv/bin/activate
 
-# Install dependencies
-pip install -r ai-service/requirements.txt
+# Install dependencies (Windows explicit virtualenv interpreter)
+.venv\Scripts\python -m pip install -r ai-service/requirements.txt
+
+# Linux/Mac alternative
+# .venv/bin/python -m pip install -r ai-service/requirements.txt
 ```
 
 #### 3. Set up frontend
@@ -209,8 +217,7 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
 **Terminal 1 - Backend:**
 ```bash
-.venv\Scripts\activate
-python -m uvicorn ai-service.main:app --port 8000
+.venv\Scripts\python -m uvicorn ai-service.main:app --port 8000
 ```
 
 **Terminal 2 - Frontend:**
@@ -303,7 +310,7 @@ Sturgeon uses an **agentic dual-model architecture** that maps directly to the A
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │              AGENTIC ORCHESTRATION                       ││
 │  │  ┌──────────────┐      ┌──────────────────────────┐    ││
-│  │  │   Gemini 3   │─────▶│  MedGemma 4B-it         │    ││
+│  │  │   Gemini 3   │─────▶│  MedGemma 1.5 4B-it     │    ││
 │  │  │  Flash       │◀─────│  (HAI-DEF Specialist)    │    ││
 │  │  │              │      │                          │    ││
 │  │  │ • Manages    │      │ • Clinical reasoning     │    ││
@@ -346,6 +353,7 @@ Sturgeon uses an **agentic dual-model architecture** that maps directly to the A
 | `/debate-turn` | POST | 20/min | Handle debate round (orchestrated) |
 | `/summary` | POST | 10/min | Generate final diagnosis summary |
 | `/rag-status` | GET | - | RAG retriever status & statistics |
+| `/rag-evaluate` | POST | - | RAG faithfulness/relevance/comprehensiveness eval (dev only) |
 | `/vllm-metrics` | GET | - | vLLM queue/throughput debug metrics |
 
 All endpoints return rate limit headers:
@@ -378,8 +386,8 @@ All endpoints return rate limit headers:
 ### 🚧 In Progress
 
 - [ ] Demo video recording
-- [ ] Submission documentation
-- [ ] Final logchecklist pass with retry-churn patch (`NEXT_PATCH_PLAN.md`)
+- [ ] Submission write-up (Kaggle template)
+- [ ] README screenshot polish for final submission
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
 
@@ -447,7 +455,6 @@ This project uses the CC BY 4.0 license to comply with MedGemma Impact Challenge
 [issues-url]: https://github.com/weekijie/Sturgeon/issues
 [license-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=for-the-badge
 [license-url]: https://github.com/weekijie/Sturgeon/blob/main/LICENSE
-[product-screenshot]: frontend/public/test-data/test1.png
 
 [Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
 [Next-url]: https://nextjs.org/

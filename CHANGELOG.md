@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2026-02-24] Session 40 - Submission Documentation Consolidation + Repo Cleanup
+
+### Documentation
+
+#### Updated
+- `README.md`:
+  - Removed stale submission links to non-existent files.
+  - Updated quick links to active docs (`DEPLOYMENT.md`, `STURGEON_PROJECT_PLAN.md`, `CHANGELOG.md`, `CLAUDE.md`).
+  - Removed obsolete patch-plan references.
+  - Updated architecture naming to MedGemma 1.5 4B-it.
+  - Added `/rag-evaluate` entry in API reference and refreshed in-progress roadmap items for submission.
+- `CLAUDE.md`:
+  - Updated stack references (Next.js 16, MedGemma 1.5 4B-it).
+  - Fixed theme guidance contradiction (dark/glassmorphism -> medical light theme).
+  - Removed references to deleted patch-queue docs and local skill-script path assumptions.
+  - Updated next-step priorities to submission tasks.
+- `DEPLOYMENT.md`:
+  - Removed references to deleted `NEXT_PATCH_PLAN.md` and `logchecklist.md` as active requirements.
+  - Reframed patch section as completed production hardening summary.
+- `STURGEON_PROJECT_PLAN.md`:
+  - Rewritten into a final submission-readiness plan (architecture, compliance, demo script, checklist, risk mitigation).
+
+### Repository Cleanup
+
+#### Deleted
+- `NEXT_PATCH_PLAN.md`
+- `logchecklist.md`
+- `frontend/README.md`
+- Tracked local HeroUI skill files under `.agents/skills/heroui-react/`
+
+### Problems Encountered (Required Session Notes)
+
+1. **Problem**: Multiple docs referenced files that were never committed or were intentionally temporary.
+   - **Why**: Rapid iteration introduced planning/transient references (`NEXT_PATCH_PLAN.md`, `logchecklist.md`, missing submission artifacts) that were not fully reconciled in top-level docs.
+   - **Resolution**: Consolidated all active guidance into durable docs and removed stale references.
+   - **Lesson**: Keep README and deployment docs linked only to maintained, committed artifacts.
+
+2. **Problem**: Project docs had drift (version/theme inconsistencies) across instruction and public-facing files.
+   - **Why**: Architecture and UI direction evolved faster than documentation synchronization.
+   - **Resolution**: Aligned stack/version/theme statements across `README.md`, `CLAUDE.md`, `DEPLOYMENT.md`, and `STURGEON_PROJECT_PLAN.md`.
+   - **Lesson**: Run periodic cross-doc consistency passes before submission freeze.
+
 ## [2026-02-23] Session 39 - Revert ICD-10-CM Summary Feature (Rollback)
 
 ### Scope

@@ -102,11 +102,11 @@ After deploy:
 1. Verify backend health endpoint responds.
 2. Verify frontend can call backend via `BACKEND_URL`.
 3. Run one full flow: upload -> differential -> debate -> summary.
-4. Run `logchecklist.md` against Modal + Vercel logs.
+4. Run the smoke checklist below and capture endpoint timings/log snippets.
 
-## Latest Patch (Sessions 27-33)
+## Latest Production Hardening (Sessions 27-33)
 
-Applied from `NEXT_PATCH_PLAN.md` plus follow-up production hardening:
+Applied during post-deploy hardening and smoke validation:
 
 - RAG retrieval query now clamps to `<=480` chars before `retrieve()` (security max remains `500` in retriever).
 - Token budgets rebalanced to reduce concise retries:
@@ -235,4 +235,3 @@ If cold starts feel excessive:
 - Runtime behavior: `modal_backend/app.py`
 - Orchestrator behavior: `modal_backend/gemini_orchestrator_modal.py`
 - Session history and fixes: `CHANGELOG.md`
-- Next patch queue: `NEXT_PATCH_PLAN.md`

@@ -21,17 +21,17 @@
 
 | Layer        | Technology                                                     | Role                                                        |
 | ------------ | -------------------------------------------------------------- | ----------------------------------------------------------- |
-| Frontend     | Next.js 14 (App Router) + **HeroUI v3**                        | UI + API routes                                             |
+| Frontend     | Next.js 16 (App Router) + **HeroUI v3**                        | UI + API routes                                             |
 | Backend      | Python FastAPI                                                 | Orchestration + inference                                   |
-| Medical AI   | **MedGemma 4B-it** (bfloat16, via AutoModelForImageTextToText) | Medical reasoning, image analysis, differential diagnosis   |
+| Medical AI   | **MedGemma 1.5 4B-it** (bfloat16, via AutoModelForImageTextToText) | Medical reasoning, image analysis, differential diagnosis   |
 | Orchestrator | **Gemini Pro/Flash** (Google AI API)                           | Conversation management, context summarization, debate flow |
-| Hosting      | Vercel (frontend) + local/Kaggle (AI)                          | Free deployment                                             |
+| Hosting      | Vercel (frontend) + Modal/local/Kaggle (AI)                    | Free/low-cost deployment                                    |
 
 > **Note**: Tailwind v4 uses `@theme` syntax which may trigger "Unknown at rule" warnings in IDEs. These are false positives.
 
 ### HeroUI v3 — IMPORTANT
 
-**Always load the `heroui-react` agent skill before making frontend UI changes.** This ensures correct v3 patterns are used.
+**Load the `heroui-react` agent skill before making frontend UI changes when available.** If unavailable, use official HeroUI docs and existing in-repo patterns.
 
 Key v3 rules:
 
@@ -40,8 +40,8 @@ Key v3 rules:
 - **Use `onPress` not `onClick`** for Button/interactive components
 - **Tailwind v4 required** — uses `@theme` and `oklch` color space
 - **Packages**: `@heroui/react@beta` + `@heroui/styles@beta`
-- **Fetch component docs before implementing**: `node scripts/get_component_docs.mjs Button Card`
-- Skill scripts location: `.agents/skills/heroui-react/scripts/`
+- **Fetch component docs before implementing** (if helper script exists): `node scripts/get_component_docs.mjs Button Card`
+- If local skill scripts are unavailable, use official HeroUI docs and existing in-repo usage patterns.
 
 ### Architecture: Agentic Dual-Model
 
@@ -70,7 +70,7 @@ $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 2. **Clarity over compatibility**: Clear code beats backward compatibility
 3. **Throw errors**: Fail fast when preconditions aren't met
 4. **Separation of concerns**: Each function has single responsibility
-5. **Medical Dark Theme**: Use `#0F172A` Slate specific branding only. Glassmorphism for depth.
+5. **Medical Light Theme**: Use clean white surfaces with Teal accents (`#0D9488`) for clinical clarity.
 
 ---
 
@@ -84,7 +84,7 @@ $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 6. **Simple > Complex**: Let TypeScript catch errors, not excessive runtime checks
 7. **Collaborative process**: Work with user to identify most efficient solution
 8. **Web search when uncertain**: Verify APIs/libraries via documentation, don't assume
-9. **Always load `heroui-react` skill** before making any frontend UI changes
+9. **Load `heroui-react` skill when available** before making frontend UI changes; otherwise use official docs
 10. **Git: generate commit messages only**: Do NOT run `git add`, `git commit`, or `git push` commands. Instead, generate the commit message/description for the user to input manually via VS Code Source Control or GitHub Desktop. PowerShell's PSReadLine crashes on multiline commit messages (terminal buffer overflow), and `&&` chaining is not supported in older PowerShell versions.
 11. **Read before editing**: Always read/view the file (or relevant section) before making edits. Do not edit files blindly from memory — the file may have changed since you last saw it.
 12. **ALWAYS use `.venv/Scripts/python` for backend**: All Python commands (tests, scripts, pip installs) MUST use the virtual environment Python at `.venv/Scripts/python`. Never use system Python or global pip. This prevents dependency conflicts and ensures reproducibility.
@@ -100,7 +100,7 @@ $env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL = "1"
 
 ```
 Sturgeon/
-├── frontend/                   # Next.js 14
+├── frontend/                   # Next.js 16
 │   ├── app/
 │   │   ├── page.tsx           # Upload + history
 │   │   ├── debate/page.tsx    # Debate chat
@@ -119,7 +119,7 @@ Sturgeon/
 │   ├── prompts.py             # Prompt templates
 │   ├── gemini_orchestrator.py # Conversation orchestrator
 │   ├── medsiglip.py           # Image triage
-│   └── tests/                 # Unit tests (41 passing)
+│   └── tests/                 # Unit tests (156 passing)
 │
 ├── modal_backend/              # Modal production backend (vLLM + FastAPI)
 │   ├── app.py                 # Modal class + ASGI app + endpoints
@@ -129,7 +129,6 @@ Sturgeon/
 │
 ├── CLAUDE.md                   # This file
 ├── CHANGELOG.md               # Session-by-session changes
-├── NEXT_PATCH_PLAN.md         # Next session patch queue
 └── README.md
 ```
 
@@ -284,7 +283,7 @@ Before suggesting or implementing any new external tool, library, or API:
 - [x] **RAG query cache** — In-memory TTL+LRU-style retrieval cache for debate context
 - [x] **Queue/timeout hardening** — Enabled input concurrency + aligned Vercel route maxDuration/timeouts
 - [x] **vLLM queue observability** — Added `/vllm-metrics` debug endpoint
-- [x] **NEXT_PATCH_PLAN applied** — RAG query clamp (<=480), token rebalance, and `/health` counters
+- [x] **Post-deploy patch set applied** — RAG query clamp (<=480), token rebalance, and `/health` counters
 - [x] **Citation fallback hardening** — CAP/PMC guideline links preserved via broader source mapping
 - [x] **Demo PDF lab flow enabled** — Demo cases now load real lab PDFs through `/extract-labs-file`
 - [x] **Analyze partial-success UX** — Image success preserved when lab extraction fails/timeouts
@@ -294,12 +293,11 @@ Before suggesting or implementing any new external tool, library, or API:
 
 ### Next Steps (Priority Order)
 
-1. [x] Apply `NEXT_PATCH_PLAN.md` (RAG query-length clamp + retry-churn reduction + counters)
-2. [ ] Prepare demo script (`DEMO_SCRIPT.md`)
-3. [ ] Record demo video (≤3 min)
-4. [ ] Write submission document
-5. [ ] Polish README with screenshots
-6. [ ] Submit to Kaggle
+1. [ ] Prepare demo script (`STURGEON_PROJECT_PLAN.md` demo section)
+2. [ ] Record demo video (≤3 min)
+3. [ ] Write submission document
+4. [ ] Polish README with screenshots
+5. [ ] Submit to Kaggle
 
 ---
 
@@ -324,8 +322,8 @@ See `CHANGELOG.md` for all code changes.
 **Feb 21, 2026**: Hallucination hardening + HeroUI v3 upgrade. Backend: removed hardcoded ferritin from prompts, fixed MedGemma CPU precision (float32), MedSigLIP eval mode, improved hallucination detection (position/unit tracking), added session cap/CORS trim/RAG eval guard/PHI redaction, fixed AAD citation mapping. Frontend: wired demo labs, fixed reset after validation, simplified rate-limit UI, added MedGemma summary to image_context, unified API headers, upgraded to HeroUI v3 (fixed all component APIs), added logo. 156 tests passing.
 
 **Feb 22, 2026**: Systematic review corpus expansion. Added `pneumonia_antibiotics_sr.md` (CAP antibiotic network meta-analysis, CURB-65, treatment recommendations — JGIM 2024) and `sepsis_qsofa_sr.md` (SOFA/qSOFA/SIRS mortality prediction comparison, scoring tables — Arch Iran Med 2024). Corpus: 12 guidelines + 3 systematic reviews. Guide-RAG GS-4 config complete for all 3 demo cases (Melanoma, Pneumonia, Sepsis).
-**Feb 22-23, 2026**: Modal/Vercel production hardening complete for this pass. Added snapshot modes (CPU default, GPU opt-in), vLLM cache volume, RAG query cache, input concurrency, route timeout alignment, and `/vllm-metrics` observability. Post-deploy logs now meet key latency goals with remaining follow-up captured in `NEXT_PATCH_PLAN.md`.
-**Feb 23, 2026**: Session 27 patch applied from `NEXT_PATCH_PLAN.md`. Added RAG query clamp (<=480 chars) before retrieval, increased differential/summary token budgets to reduce concise retries, and exposed retry/block counters in `/health` for faster `logchecklist.md` verification.
+**Feb 22-23, 2026**: Modal/Vercel production hardening complete for this pass. Added snapshot modes (CPU default, GPU opt-in), vLLM cache volume, RAG query cache, input concurrency, route timeout alignment, and `/vllm-metrics` observability.
+**Feb 23, 2026**: Session 27 patch applied. Added RAG query clamp (<=480 chars) before retrieval, increased differential/summary token budgets to reduce concise retries, and exposed retry/block counters in `/health` for faster verification.
 **Feb 23, 2026**: Sessions 28-33 follow-up hardening. Fixed CAP citation fallback mapping, switched demo cases to real PDF lab extraction, aligned warmup/timeout/partial-success frontend behavior, added deterministic multi-parser extraction (`table-fast`/`table-full`/`flat-full`) before LLM fallback, and validated production smoke tests on demo + local sample PDFs with `/health` extraction counters.
 
 ---
