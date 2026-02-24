@@ -14,7 +14,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/weekijie/Sturgeon">
-    <img src="frontend/public/sturgeon-logo.svg" alt="Logo" width="80" height="80">
+    <img src="frontend/public/sturgeon_traced.svg" alt="Logo" width="80" height="80">
   </a>
 
 <h3 align="center">Sturgeon</h3>
@@ -24,6 +24,7 @@
     <br />
     <em>Like House MD's diagnostic team, but AI-powered</em>
     <br />
+    <a href="https://www.youtube.com/watch?v=3tTzITIdABQ">Video Demo</a>
   </p>
 </div>
 
