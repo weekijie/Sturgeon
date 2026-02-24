@@ -1,6 +1,6 @@
 # Sturgeon - Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project will be documented in this file..
 
 ## [2026-02-24] Session 40 - Submission Documentation Consolidation + Repo Cleanup
 

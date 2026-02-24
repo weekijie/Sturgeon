@@ -396,7 +396,7 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed development history.
 
 - `main`: local stable branch
 - `development` (`dev`): local branch for experimental features and validation
-- `production`: deployed web demo/deployment branch
+- `production`: deployed web demo/deployment branch (latest features)
 
 Suggested workflow:
 
