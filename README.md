@@ -72,8 +72,6 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Sturgeon Screenshot][product-screenshot]](https://github.com/weekijie/Sturgeon)
-
 **Sturgeon** is a Clinical Debate AI that brings House MD-style differential diagnosis to solo practitioners and resource-constrained settings. When you don't have a diagnostic team to challenge your thinking, Sturgeon acts as your AI colleague—generating differentials, defending its reasoning, and adapting when you challenge its conclusions.
 
 ### The Problem
@@ -107,12 +105,10 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 - **🔍 RAG-Enhanced Reasoning** - Clinical guidelines with automatic citation extraction
 - **🚀 Production Queue Hardening** - Modal input concurrency + Vercel timeout alignment
 - **🛡️ Hallucination Prevention** - Auto-validation with retry on detected fabrications
-- **📐 LLM-as-Judge Evaluation** - Faithfulness, relevance, comprehensiveness metrics
 - **⚡ Smart Rate Limiting** - Per-endpoint quota management with visual feedback
 - **💾 Session Persistence** - Cases saved locally, resume anytime
 - **🎙️ Voice-to-Text Input** - Dictate patient history and debate prompts (browser-native)
 - **📝 Streaming Chat UX** - Progressive response rendering + lightweight request stage indicator
-- **📋 One-Click Copy** - Copy AI responses from each message
 - **📱 Mobile Responsive** - Full functionality on any device
 - **🎯 MedSigLIP Triage** - Fast image classification before deep analysis
 
@@ -139,13 +135,12 @@ Built for the [MedGemma Impact Challenge](https://www.kaggle.com/competitions/me
 ## Getting Started
 
 For production deployment (Modal + Vercel), see `DEPLOYMENT.md`.
-For the queued follow-up patch list, see `NEXT_PATCH_PLAN.md`.
 
 ### Prerequisites
 
 - **Node.js** 18+ 
 - **Python** 3.10+
-- **GPU** with 16GB+ VRAM (NVIDIA CUDA or AMD ROCm)
+- **GPU** with 8GB+ VRAM (NVIDIA CUDA or AMD ROCm)
 - **MedGemma Access** - [Request on HuggingFace](https://huggingface.co/google/medgemma-1.5-4b-it)
 - **Gemini API Key** (optional) - [Get free key](https://aistudio.google.com/apikey)
 
@@ -368,7 +363,6 @@ All endpoints return rate limit headers:
 - [x] RAG integration with clinical guidelines (14 documents)
 - [x] Comprehensive citation detection (15+ medical organizations)
 - [x] Hallucination prevention with auto-retry
-- [x] LLM-as-Judge evaluation framework
 - [x] Rate limiting with visual UI feedback
 - [x] Session persistence via localStorage
 - [x] Mobile responsive design
